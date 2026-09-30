@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import IntersectionCanvas from './components/IntersectionCanvas.jsx';
 import Inspector from './components/Inspector.jsx';
 import LegStrip from './components/LegStrip.jsx';
 import PhaseDiagrams from './components/PhaseDiagrams.jsx';
 import SignalPicker from './components/SignalPicker.jsx';
+import ExportMenu from './components/ExportMenu.jsx';
 import { useHistory } from './useHistory.js';
 import { computeGeometry } from './lib/geometry.js';
 import {
@@ -13,8 +14,12 @@ import { listSignals, designFromGtss, gtssFromDesign } from './lib/gtssMapping.j
 import { readZipText } from './lib/zipReader.js';
 import { zipBlob } from './lib/zipWriter.js';
 import { saveDesign, loadDesign, saveFeed, loadFeed, encodeShare, decodeShare, SHARE_PREFIX } from './lib/store.js';
-import { downloadBlob, slugify, svgMarkup, svgToPngBlob } from './lib/download.js';
+import { downloadBlob, slugify, svgMarkup, svgToPngBlob, phaseSheetMarkup } from './lib/download.js';
+import { designFile, parseDesignFile, detectorCsv, sheetTitle } from './lib/exports.js';
 import { DETECTOR_COLORS, COLORS } from './palette.js';
+
+// Three.js and the 3D scene load only when the 3D view is opened.
+const View3D = lazy(() => import('./three/View3D.jsx'));
 
 function isTyping(target) {
   return target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable);
@@ -27,10 +32,11 @@ export default function App() {
   const [phase, setPhase] = useState(null);
   const [feed, setFeed] = useState(() => loadFeed());
   const [picker, setPicker] = useState(null); // { files, label, signals }
-  const [signalOnly, setSignalOnly] = useState(false);
+  const [show3d, setShow3d] = useState(false);
   const [toast, setToast] = useState(null);
   const [canvasKey, setCanvasKey] = useState(0); // remounts the canvas, refitting it, on a new design
   const svgRef = useRef(null);
+  const phasesRef = useRef(null);
   const fileRef = useRef(null);
   const linked = useRef(null);
 
@@ -76,6 +82,7 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e) => {
+      if (show3d) return; // the 3D view handles its own keys
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === 'z') {
         if (isTyping(e.target)) return;
@@ -101,7 +108,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo, update, selection]);
+  }, [undo, redo, update, selection, show3d]);
 
   const newFromTemplate = (id) => {
     replace(createTemplate(id));
@@ -116,6 +123,20 @@ export default function App() {
     const list = [...(event.target.files || [])];
     event.target.value = '';
     if (!list.length) return;
+    const designFileSource = list.find((file) => /\.json$/i.test(file.name));
+    if (designFileSource) {
+      try {
+        const opened = parseDesignFile(await designFileSource.text());
+        replace(opened);
+        setCanvasKey((k) => k + 1);
+        setSelection(null);
+        setPhase(null);
+        say(`Opened ${designFileSource.name}: ${opened.name}.`);
+      } catch (err) {
+        say(`Could not open ${designFileSource.name}: ${err.message}`, 'error', 8000);
+      }
+      return;
+    }
     const files = {};
     try {
       for (const file of list) {
@@ -165,7 +186,7 @@ export default function App() {
 
   /* ---------------- GTSS out ---------------- */
 
-  const exportGtss = () => {
+  const exportGtss = (signalOnly = false) => {
     const { files, warnings } = gtssFromDesign(design, attachedFeed ? attachedFeed.files : null, { signalOnly });
     const entries = Object.entries(files).map(([name, data]) => ({ name, data }));
     const whole = attachedFeed && !signalOnly;
@@ -208,6 +229,63 @@ export default function App() {
     }
   };
 
+  const exportPhaseSheet = async (kind) => {
+    const panel = phasesRef.current;
+    if (!panel || !panel.querySelector('.phase-cell')) {
+      say('There are no phase diagrams yet: assign phases first.', 'warn');
+      return;
+    }
+    const { markup, width, height } = phaseSheetMarkup(panel, sheetTitle(design));
+    const base = `${slugify(design.name)}-phases`;
+    if (kind === 'svg') {
+      downloadBlob(new Blob([markup], { type: 'image/svg+xml' }), `${base}.svg`);
+    } else {
+      try {
+        downloadBlob(await svgToPngBlob(markup, width * 2, height * 2), `${base}.png`);
+      } catch (err) {
+        say(err.message, 'error');
+      }
+    }
+  };
+
+  const exportText = (text, type, name) => downloadBlob(new Blob([text], { type }), name);
+
+  const signalCount = attachedFeed ? attachedFeed.signals.length : 0;
+  const exportItems = [
+    {
+      id: 'gtss',
+      label: attachedFeed ? `GTSS feed, all ${signalCount} signal${signalCount === 1 ? '' : 's'} (.zip)` : 'GTSS feed (.zip)',
+      detail: attachedFeed
+        ? `${attachedFeed.label} with signal ${design.signal.id} rewritten; everything else unchanged`
+        : 'Agency, signal, approaches, phases and detectors',
+      onSelect: () => exportGtss(false),
+    },
+    attachedFeed && {
+      id: 'gtss-one',
+      label: 'GTSS, this signal only (.zip)',
+      detail: `Signal ${design.signal.id}, with its timings and preempts`,
+      onSelect: () => exportGtss(true),
+    },
+    { separator: true },
+    { id: 'png', label: 'Plan drawing (.png)', detail: '2000 px wide, as framed on screen', onSelect: () => exportImage('png') },
+    { id: 'svg', label: 'Plan drawing (.svg)', detail: 'Vector, for reports and CAD', onSelect: () => exportImage('svg') },
+    { id: 'phases-png', label: 'Phase diagrams (.png)', detail: 'Ring-and-barrier sheet', onSelect: () => exportPhaseSheet('png') },
+    { id: 'phases-svg', label: 'Phase diagrams (.svg)', detail: 'The same sheet, as vector', onSelect: () => exportPhaseSheet('svg') },
+    { separator: true },
+    {
+      id: 'detectors',
+      label: 'Detector list (.csv)',
+      detail: 'Channel, approach, lane, phase, setback: for the cabinet',
+      onSelect: () => exportText(detectorCsv(design), 'text/csv', `${slugify(design.name)}-detectors.csv`),
+    },
+    {
+      id: 'design',
+      label: 'Design file (.json)',
+      detail: 'Everything, including what GTSS can’t hold. Opens with Open…',
+      onSelect: () => exportText(designFile(design), 'application/json', `${slugify(design.name)}.intersection-mix.json`),
+    },
+  ];
+
   const onBearing = useCallback((legId, bearing) => {
     update((d) => {
       const leg = findLeg(d, legId);
@@ -234,16 +312,17 @@ export default function App() {
             <option value="">New…</option>
             {TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
           </select>
-          <button type="button" onClick={() => fileRef.current.click()}>Load GTSS</button>
-          <button type="button" className="primary" onClick={exportGtss}>Export GTSS</button>
+          <button type="button" onClick={() => fileRef.current.click()}
+            title="Open a GTSS feed (.zip or .txt files) or an Intersection Mix design (.json)">Open…</button>
+          <ExportMenu items={exportItems} />
           <button type="button" onClick={copyLink}>Copy link</button>
-          <button type="button" onClick={() => exportImage('svg')}>SVG</button>
-          <button type="button" onClick={() => exportImage('png')}>PNG</button>
+          <button type="button" className="btn-3d" onClick={() => { setSelection(null); setShow3d(true); }}
+            title="Open the intersection in 3D">3D view</button>
           <span className="sep" />
           <button type="button" onClick={undo} disabled={!history.canUndo} title="Undo (⌘Z)" aria-label="Undo">↶</button>
           <button type="button" onClick={redo} disabled={!history.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">↷</button>
         </nav>
-        <input ref={fileRef} type="file" accept=".zip,.txt" multiple hidden onChange={openFiles} />
+        <input ref={fileRef} type="file" accept=".zip,.txt,.json" multiple hidden onChange={openFiles} />
       </header>
 
       {attachedFeed && (
@@ -255,10 +334,6 @@ export default function App() {
           {attachedFeed.signals.length > 1 && (
             <button type="button" className="small" onClick={() => setPicker(attachedFeed)}>Switch signal</button>
           )}
-          <label className="check">
-            <input type="checkbox" checked={signalOnly} onChange={(e) => setSignalOnly(e.target.checked)} />
-            Export this signal only
-          </label>
         </div>
       )}
 
@@ -282,7 +357,9 @@ export default function App() {
 
       <LegStrip design={design} legId={stripLeg || (design.legs[0] && design.legs[0].id)} selection={selection} onSelect={select} update={update} />
 
-      <PhaseDiagrams design={design} geom={geom} phase={phase} onPick={(p) => { setPhase(p); if (p) setSelection(null); }} />
+      <div ref={phasesRef}>
+        <PhaseDiagrams design={design} geom={geom} phase={phase} onPick={(p) => { setPhase(p); if (p) setSelection(null); }} />
+      </div>
 
       <section className="panel checks">
         <div className="section-head">
@@ -327,15 +404,28 @@ export default function App() {
         </ul>
         <h3>Export</h3>
         <p>
-          With a feed loaded, Export GTSS writes the whole feed back with only this signal&apos;s rows replaced. Other
+          With a feed loaded, Export › GTSS feed writes the whole feed back with only this signal&apos;s rows replaced. Other
           signals, <code>basic_timings.txt</code>, <code>preempt.txt</code> and columns this tool doesn&apos;t use pass
           through unchanged. Everything runs in your browser; share links carry the design in the URL fragment, which is
           never sent to a server.
+        </p>
+        <h3>3D view</h3>
+        <p>
+          The 3D view button opens the design in 3D. The road surface is the plan itself, and the sidewalks and islands are
+          raised to curb height. Mast-arm signals hang over every approach lane, and their lamps show whichever phase you
+          choose. Orbit, pan and zoom, switch to isometric, save a PNG, or export a glTF model (.glb, in metres) to carry
+          on modelling in Blender, SketchUp or similar tools.
         </p>
         <h3>Keys</h3>
         <p>⌘/Ctrl-Z undo · ⇧⌘Z or Ctrl-Y redo · Delete removes the selected lane or detector · Esc clears the selection · Shift while dragging a handle rotates by 1°.</p>
       </details>
 
+      {show3d && (
+        <Suspense fallback={<div className="view3d"><div className="view3d-status">Loading 3D engine…</div></div>}>
+          <View3D design={design} geom={geom} planSvg={svgRef.current} initialPhase={phase}
+            onClose={() => setShow3d(false)} say={say} />
+        </Suspense>
+      )}
       {picker && <SignalPicker feed={picker} onPick={(id) => importSignal(picker, id)} onClose={() => setPicker(null)} />}
       {toast && (
         <div className={`toast ${toast.tone}`} role="status" key={toast.id}>

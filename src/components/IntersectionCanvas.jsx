@@ -112,9 +112,9 @@ function LegMarkings({ g, selection, onSelect }) {
         );
       })}
 
-      {/* Break line where far detectors are drawn compressed */}
+      {/* Break line where far detectors are drawn compressed; a plan convention, not pavement */}
       {g.breakAt && (
-        <g>
+        <g data-3d="skip">
           <Rect x0={cs.sidewalkOut[0] - 2} x1={cs.sidewalkIn[1] + 2} y0={g.breakAt} y1={g.breakAt + 3} fill={COLORS.land} />
           <line x1={cs.sidewalkOut[0] - 2} x2={cs.sidewalkIn[1] + 2} y1={g.breakAt} y2={g.breakAt} stroke={COLORS.curb} strokeWidth="0.4" />
           <line x1={cs.sidewalkOut[0] - 2} x2={cs.sidewalkIn[1] + 2} y1={g.breakAt + 3} y2={g.breakAt + 3} stroke={COLORS.curb} strokeWidth="0.4" />
@@ -374,7 +374,7 @@ export default function IntersectionCanvas({ design, geom, selection, phase, onS
 
       {/* Movements of the selected phase or leg */}
       {overlay && (
-        <g pointerEvents="none">
+        <g pointerEvents="none" data-3d="skip">
           {phase && <rect x={box.minX - 500} y={box.minY - 500} width={w + 1000} height={box.maxY - box.minY + 1000} fill="#101418" opacity="0.28" />}
           {overlay.moves.map((m, i) => (
             <g key={`m${i}`}>
@@ -400,7 +400,7 @@ export default function IntersectionCanvas({ design, geom, selection, phase, onS
 
       {/* Street labels and rotate handles */}
       {geom.legs.map((g) => (
-        <g key={`lb${g.id}`}>
+        <g key={`lb${g.id}`} data-3d="skip">
           <text x={g.labelTextX} y={g.labelAt.y} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={COLORS.text}
             stroke={COLORS.land} strokeWidth="2" paintOrder="stroke" style={{ cursor: 'pointer' }}
             onClick={(e) => { e.stopPropagation(); onSelect({ type: 'leg', legId: g.id }); }}>
@@ -422,7 +422,7 @@ export default function IntersectionCanvas({ design, geom, selection, phase, onS
       ))}
 
       {/* North arrow */}
-      <g transform={`translate(${northAt.x} ${northAt.y}) scale(${northScale})`} pointerEvents="none">
+      <g transform={`translate(${northAt.x} ${northAt.y}) scale(${northScale})`} pointerEvents="none" data-3d="skip">
         <polygon points="0,-14 5,2 0,-2 -5,2" fill={COLORS.text} />
         <text y="12" textAnchor="middle" fontSize="8" fontWeight="700" fill={COLORS.text}>N</text>
       </g>

@@ -374,6 +374,98 @@ table.moves select { width: 100%; }
 .about summary { cursor: pointer; font-weight: 700; }
 .about p, .about li { max-width: 80ch; }
 
+/* Export menu */
+.export-menu { position: relative; }
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  min-width: 300px;
+  padding: 6px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+}
+.menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 7px 10px;
+  border-radius: 7px;
+  color: var(--text);
+}
+.actions .menu-item { background: none; border: 0; color: var(--text); }
+.menu-item:hover, .menu-item:focus-visible, .actions .menu-item:hover, .actions .menu-item:focus-visible { background: var(--panel-2); outline: none; }
+.menu-label { font-weight: 600; }
+.menu-detail { font-size: 12px; color: var(--muted); }
+.menu-sep { height: 1px; background: var(--border); margin: 4px 6px; }
+.actions .btn-3d { background: #2f3b4c; border-color: #52627a; font-weight: 600; }
+
+/* 3D view */
+.view3d {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  animation: view3d-in 160ms ease-out;
+  display: flex;
+  flex-direction: column;
+  background: #cfe1f1;
+}
+.view3d > .view3d-status { margin: auto; }
+.view3d-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: var(--topbar);
+  color: var(--topbar-text);
+}
+.view3d-bar button, .view3d-bar select { background: #343a42; color: var(--topbar-text); border-color: #4a515b; }
+.view3d-bar button.primary { background: #339af0; border-color: #339af0; color: #fff; }
+.view3d-title { margin-right: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
+.view3d-spacer { flex: 1; }
+.view3d-phase { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.view3d-close { font-size: 18px; line-height: 1; padding: 4px 10px; }
+.segmented { display: inline-flex; border: 1px solid #4a515b; border-radius: 8px; overflow: hidden; }
+.segmented button { border: 0; border-radius: 0; background: #2a2f36; }
+.segmented button.on { background: #f1f3f5; color: #1f2328; }
+.view3d-stage { position: relative; flex: 1; min-height: 0; touch-action: none; }
+.view3d-stage canvas { display: block; }
+/* The scene is drawn before it is shown, then faded in, so opening never flashes an empty frame. */
+.view3d-canvas { opacity: 0; transition: opacity 280ms ease-out; }
+.view3d-canvas.shown { opacity: 1; }
+@keyframes view3d-in { from { opacity: 0; } to { opacity: 1; } }
+.view3d-status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  color: #2b3036;
+  pointer-events: none;
+}
+.view3d-hint {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.85);
+  color: #2b3036;
+  pointer-events: none;
+}
+
 /* Modal and toast */
 .modal-backdrop {
   position: fixed;
@@ -392,7 +484,7 @@ table.moves select { width: 100%; }
   left: 50%;
   bottom: 18px;
   transform: translateX(-50%);
-  z-index: 60;
+  z-index: 80;
   display: flex;
   gap: 10px;
   align-items: flex-start;

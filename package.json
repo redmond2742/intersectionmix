@@ -12,8 +12,10 @@
   },
   "dependencies": {
     "immer": "^11.1.18",
+    "polygon-clipping": "^0.15.7",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.1",

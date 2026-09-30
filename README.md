@@ -34,7 +34,24 @@ Everything runs in the browser. There is no server and no account.
   - Switching signals keeps your edits to the previous one.
 - **Saving.** Designs autosave in the browser. **Copy link** packs the design
   into the URL fragment. The fragment is never sent to a server.
-- **Images.** Export the plan as SVG or PNG.
+- **Export menu.** Formats:
+  - GTSS: the whole feed, or this signal only.
+  - Plan drawing: PNG or SVG.
+  - Phase-diagram sheet: PNG or SVG.
+  - Detector list: CSV.
+  - Design file: JSON. It keeps everything GTSS can't hold and reopens
+    with **Open…**.
+- **3D view.** The **3D view** button opens the design in 3D with three.js,
+  which loads only when you click it.
+  - The road surface is the plan itself. Sidewalks and porkchop islands are
+    raised to curb height.
+  - Mast-arm signals hang over every approach lane, and their lamps show a
+    chosen phase. The scene also has speed limit signs, street-name blades,
+    queued cars and street trees.
+  - You can orbit, pan and zoom, and switch between perspective and
+    isometric.
+  - Export a PNG, or a glTF binary (`.glb`, in metres) to keep modelling in
+    Blender, SketchUp and similar tools.
 - **Undo and redo.** ⌘/Ctrl-Z undoes and ⇧⌘Z (or Ctrl-Y) redoes. Delete
   removes the selected lane or detector.
 
@@ -74,7 +91,16 @@ The stack is React and Vite, written in plain JavaScript.
   | `geometry.js` | Plan-view layout |
   | `store.js` | Autosave and share links |
   | `gtss.js` | CSV handling |
+  | `exports.js` | Design file and detector list |
   | `zipReader.js`, `zipWriter.js` | Zip handling, from Traffic Signal Kit |
+
+- The 3D view lives in `src/three/`:
+
+  | File | Contents |
+  | --- | --- |
+  | `areas.js` | Plan areas for the 3D build: sidewalk minus roadway, raised islands (framework-free) |
+  | `buildScene.js` | The three.js scene |
+  | `View3D.jsx` | The viewer and its exports |
 
 - Edits run as model operations on immer drafts (`src/useHistory.js`), which
   also provides undo and redo.

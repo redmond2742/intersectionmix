@@ -221,6 +221,7 @@ export function computeGeometry(design) {
   const asphaltCore = [];
   const sidewalkCore = [];
   const fillets = [];
+  const filletShapes = []; // the same, as polygons, for the 3D view
   for (const c of corners) {
     if (c.valid) {
       asphaltCore.push(c.inner.point);
@@ -233,6 +234,7 @@ export function computeGeometry(design) {
         const p1 = add(c.inner.point, mul(c.gi.u, radius));
         const p2 = add(c.inner.point, mul(c.gj.u, radius));
         fillets.push(`M${pt(p1)} Q${pt(c.inner.point)} ${pt(p2)} L${pt(c.inner.point)} Z`);
+        filletShapes.push([...quadPoints(p1, c.inner.point, p2, 10), c.inner.point]);
       }
     } else {
       asphaltCore.push(c.inner.pI, c.inner.pJ);
@@ -271,12 +273,21 @@ export function computeGeometry(design) {
     maxY: Math.max(...points.map((p) => p.y)) + pad,
   };
 
-  return { legs, byId, corners, asphaltCore, sidewalkCore, fillets, bounds, far };
+  return { legs, byId, corners, asphaltCore, sidewalkCore, fillets, filletShapes, bounds, far };
 }
 
 /* ------------------------------------------------------------------ */
 /* Free-right slip lanes                                               */
 /* ------------------------------------------------------------------ */
+
+/** Points along a quadratic curve, both ends included. */
+function quadPoints(p0, c, p1, n) {
+  return Array.from({ length: n + 1 }, (_, i) => {
+    const t = i / n;
+    const m = 1 - t;
+    return { x: m * m * p0.x + 2 * m * t * c.x + t * t * p1.x, y: m * m * p0.y + 2 * m * t * c.y + t * t * p1.y };
+  });
+}
 
 function cubicAt(p0, p1, p2, p3, t) {
   const m = 1 - t;
@@ -384,6 +395,7 @@ function slipGeometry(g, t, c) {
   // The island: approach tip, along the approach curb to a small nose in the
   // corner, along the receiving curb, then back along the slip's inside edge.
   let island = null;
+  let islandPoints = null;
   if (c && c.inner.point) {
     const cornerG = c.gi === g ? c.inner.hit.a : c.inner.hit.b;
     const cornerT = c.gi === g ? c.inner.hit.b : c.inner.hit.a;
@@ -396,6 +408,7 @@ function slipGeometry(g, t, c) {
       const f2 = add(C, mul(t.u, r));
       const back = inner.slice(1, -1).reverse().map(pt).join(' L');
       island = `M${pt(tipA)} L${pt(f1)} Q${pt(C)} ${pt(f2)} L${pt(tipB)} L${back} Z`;
+      islandPoints = [tipA, ...quadPoints(f1, C, f2, 6), tipB, ...inner.slice(1, -1).reverse()];
     }
   }
 
@@ -426,6 +439,7 @@ function slipGeometry(g, t, c) {
     asphalt: [...outer, ...[...inner].reverse()],
     sidewalk: [...walk, ...[...outer].reverse()],
     island,
+    islandPoints,
     taper,
     receiving,
     arrows,

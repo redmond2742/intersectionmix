@@ -51,6 +51,13 @@ function Diagram({ design, geom, phase, selected, onPick }) {
           </g>
         ))}
         {geom.fillets.map((d, i) => <path key={i} d={d} fill="#c9ccd1" />)}
+        {geom.legs.filter((g) => g.slip).map((g) => (
+          <g key={`slip${g.id}`} fill="#c9ccd1">
+            <polygon points={g.slip.asphalt.map(pt).join(' ')} />
+            <polygon points={g.slip.taper.asphalt.map(pt).join(' ')} />
+            <polygon points={g.slip.receiving.asphalt.map(pt).join(' ')} />
+          </g>
+        ))}
         {moves.map((m, i) => (
           <path key={i} d={m.d} fill="none" stroke={color} strokeWidth="5" strokeLinecap="round"
             strokeDasharray={m.permissive ? '9 6' : undefined} markerEnd={`url(#${markerId})`} />
