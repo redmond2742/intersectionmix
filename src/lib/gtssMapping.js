@@ -134,7 +134,7 @@ export function designFromGtss(files, signalId) {
     if (bearing == null) note(`Approach ${approachId} has no compass bearing; it is drawn pointing north.`);
     leg.crosswalk.enabled = false;
     const free = /^(\d+)-FR(?:-(PI|P))?$/i.exec(text(pick(row, 'free_right')));
-    if (free) leg.freeRight = { lanes: Number(free[1]), ped: (free[2] || '').toUpperCase() };
+    if (free) leg.freeRight = { lanes: Number(free[1]), ped: (free[2] || '').toUpperCase(), receiving: 'merge', size: 'standard' };
     legByApproach.set(approachId, leg);
     design.legs.push(leg);
   }

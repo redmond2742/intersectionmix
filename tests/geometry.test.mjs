@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { vectors, crossSection, computeGeometry, phaseMovements, phaseCrossings } from '../src/lib/geometry.js';
+import { vectors, crossSection, computeGeometry, phaseMovements, phaseCrossings, SLIP_SIZES } from '../src/lib/geometry.js';
 import { createTemplate, crosswalkLengthFt, TEMPLATES } from '../src/lib/model.js';
 
 const close = (a, b) => Math.abs(a - b) < 1e-9;
@@ -57,5 +57,105 @@ describe('geometry', () => {
     expect(far.y1).toBeLessThanOrEqual(g.L);
     expect(far.compressed).toBe(true);
     expect(g.breakAt).not.toBeNull();
+  });
+
+  describe('free-right slip', () => {
+    const withSlip = (receiving, size = 'standard') => {
+      const design = createTemplate('four');
+      design.legs[0].freeRight = { lanes: 1, ped: 'P', receiving, size }; // EB, turning right onto the south leg
+      return { design, geom: computeGeometry(design) };
+    };
+    const local = (g, p) => ({ y: p.x * g.u.x + p.y * g.u.y, x: p.x * g.r.x + p.y * g.r.y });
+
+    test('is not part of the cross-section', () => {
+      const { design } = withSlip('merge');
+      const cs = crossSection(design.legs[0]);
+      expect(cs.sidewalkIn[0]).toBe(cs.curbIn);
+    });
+
+    test('leaves the approach at its curb and joins the receiving leg at its curb', () => {
+      const { design, geom } = withSlip('merge');
+      const g = geom.byId.get(design.legs[0].id);
+      const t = geom.byId.get(g.slip.targetId);
+      expect(t.leg.approachId).toBe(design.legs[2].approachId); // the NB approach's leg, south
+      const n = g.slip.asphalt.length / 2;
+      const innerStart = local(g, g.slip.asphalt[g.slip.asphalt.length - 1]);
+      const innerEnd = local(t, g.slip.asphalt[n]);
+      // The slip leaves each curb at an angle, so the island's tips are wedges.
+      const second = local(g, g.slip.asphalt[g.slip.asphalt.length - 2]);
+      expect(second.x - innerStart.x).toBeGreaterThan(0.3);
+      expect(innerStart.x).toBeCloseTo(g.cs.curbIn, 6);
+      expect(innerEnd.x).toBeCloseTo(t.cs.curbOut, 6);
+      expect(g.slip.island).toMatch(/^M.+Q.+Z$/);
+      expect(g.slip.crosswalk).not.toBeNull();
+    });
+
+    test('the island stays in the corner, clear of both roadways', () => {
+      const { design, geom } = withSlip('merge');
+      const g = geom.byId.get(design.legs[0].id);
+      const t = geom.byId.get(g.slip.targetId);
+      const nums = g.slip.island.match(/-?\d+(\.\d+)?/g).map(Number);
+      for (let i = 0; i < nums.length; i += 2) {
+        const p = { x: nums[i], y: nums[i + 1] };
+        const a = local(g, p);
+        const b = local(t, p);
+        expect(a.x).toBeGreaterThanOrEqual(g.cs.curbIn - 0.01);
+        expect(b.x).toBeLessThanOrEqual(t.cs.curbOut + 0.01);
+      }
+    });
+
+    test('merges within a taper, or runs to the end of the leg as its own lane', () => {
+      const merge = withSlip('merge');
+      const added = withSlip('added');
+      const gm = merge.geom.byId.get(merge.design.legs[0].id);
+      const ga = added.geom.byId.get(added.design.legs[0].id);
+      const tm = merge.geom.byId.get(gm.slip.targetId);
+      const ta = added.geom.byId.get(ga.slip.targetId);
+      const far = (g, t) => Math.max(...g.slip.receiving.asphalt.map((p) => local(t, p).y));
+      expect(far(gm, tm)).toBeCloseTo(tm.cwEnd + SLIP_SIZES.standard.end + SLIP_SIZES.standard.merge, 6);
+      expect(gm.slip.receiving.teeth.length).toBeGreaterThan(0);
+      expect(far(ga, ta)).toBeCloseTo(ta.L, 6);
+      expect(ga.slip.receiving.teeth).toHaveLength(0);
+    });
+
+    test('the right turn is drawn along the slip', () => {
+      const { design, geom } = withSlip('added');
+      const moves = phaseMovements(design, geom, design.legs[0].movements.R.phase);
+      expect(moves.some((m) => m.free && m.d === geom.byId.get(design.legs[0].id).slip.path)).toBe(true);
+    });
+
+    test('compact puts the island at the crosswalks, with no deceleration lane', () => {
+      const sizes = ['compact', 'standard', 'long'].map((size) => {
+        const { design, geom } = withSlip('merge', size);
+        const g = geom.byId.get(design.legs[0].id);
+        const t = geom.byId.get(g.slip.targetId);
+        const tipA = local(g, g.slip.asphalt[g.slip.asphalt.length - 1]).y;
+        const tipB = local(t, g.slip.asphalt[g.slip.asphalt.length / 2]).y;
+        return { g, t, tipA, tipB, slip: g.slip };
+      });
+      const [compact, standard, long] = sizes;
+      expect(compact.tipA).toBeCloseTo(compact.g.cwEnd + SLIP_SIZES.compact.start, 6);
+      expect(compact.tipB).toBeCloseTo(compact.t.cwEnd + SLIP_SIZES.compact.end, 6);
+      expect(compact.slip.taper.line).toBeNull();
+      expect(compact.slip.island).not.toBeNull();
+      expect(compact.tipA).toBeLessThan(standard.tipA);
+      expect(standard.tipA).toBeLessThan(long.tipA);
+      // Long tapers are squeezed to stay on the leg as drawn.
+      const reach = Math.max(...long.slip.taper.asphalt.map((p) => local(long.g, p).y));
+      expect(reach).toBeLessThanOrEqual(long.g.L);
+    });
+  });
+
+  test('each approach has a speed limit sign beside its label, inside the drawing', () => {
+    const design = createTemplate('four');
+    design.legs[3].speed = '';
+    const geom = computeGeometry(design);
+    for (const g of geom.legs.slice(0, 3)) {
+      expect(g.speedSign.limit).toBe(Number(g.leg.speed));
+      expect(g.speedSign.x).toBeGreaterThan(g.labelTextX + g.textWidth / 2 - 0.01);
+      expect(g.speedSign.x + g.speedSign.w).toBeLessThanOrEqual(geom.bounds.maxX);
+      expect(g.speedSign.y).toBeGreaterThanOrEqual(geom.bounds.minY);
+    }
+    expect(geom.legs[3].speedSign).toBeNull();
   });
 });

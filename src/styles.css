@@ -276,7 +276,6 @@ table.moves select { width: 100%; }
 .tile.outbound { background: #5a5e65; }
 .tile.inbound { background: var(--tile-asphalt); cursor: grab; }
 .tile.inbound.free { background: #5d6168; cursor: default; }
-.tile.island { background: #cdc8bd; color: #4b4f55; height: 156px; }
 .tile.median { background: #6b6f76; color: #fff; }
 .tile.median.raised { background: var(--tile-median); color: #2f3b24; height: 156px; }
 .tile.median.paint { background: repeating-linear-gradient(135deg, #5a5e65 0 8px, #d9b536 8px 10px); }
@@ -317,6 +316,15 @@ table.moves select { width: 100%; }
 }
 .tile:hover .stepper button, .tile.selected .stepper button { opacity: 1; }
 .bike-icon { font-size: 18px; }
+.tile-toggle {
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: rgba(0, 0, 0, 0.25);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 10px;
+  line-height: 16px;
+}
 .palette { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; align-items: center; }
 .palette-item {
   display: inline-flex;

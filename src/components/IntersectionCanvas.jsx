@@ -82,22 +82,6 @@ function LegMarkings({ g, selection, onSelect }) {
         </g>
       )}
 
-      {/* Free-right lanes and their island */}
-      {cs.island && (
-        <Rect x0={cs.island[0]} x1={cs.island[1]} y0={g.S + 8} y1={g.L} fill={COLORS.island} stroke={COLORS.curb} strokeWidth="0.5" rx="2" />
-      )}
-      {cs.free.map((item, i) => (
-        <g key={`free${i}`}>
-          <Rect x0={item.x0} x1={item.x1} y0={g.S + 40} y1={g.L} fill={COLORS.asphalt} />
-          <g transform={`translate(${item.cx} ${g.S + 60})`}><LaneGlyph turns={['R']} /></g>
-          {leg.freeRight.ped && (
-            Array.from({ length: Math.floor((item.x1 - item.x0) / 4) }, (_, k) => (
-              <Rect key={k} x0={item.x0 + 1 + k * 4} x1={item.x0 + 3 + k * 4} y0={g.S + 44} y1={g.S + 52} fill={COLORS.marking} />
-            ))
-          )}
-        </g>
-      ))}
-
       {/* Lane arrows and click targets */}
       {cs.inbound.map((item) => (
         <g key={item.lane.id} style={{ cursor: 'pointer' }}
@@ -140,6 +124,21 @@ function LegMarkings({ g, selection, onSelect }) {
   );
 }
 
+/** A regulatory speed limit sign (R2-1): black on white, the limit large. */
+function SpeedSign({ sign }) {
+  const { x, y, w, h, limit } = sign;
+  return (
+    <g transform={`translate(${x} ${y})`} pointerEvents="none">
+      <title>{`Posted speed ${limit} mph`}</title>
+      <rect width={w} height={h} rx="1.2" fill="#ffffff" stroke="#1d2126" strokeWidth="0.45" />
+      <rect x="0.7" y="0.7" width={w - 1.4} height={h - 1.4} rx="0.8" fill="none" stroke="#1d2126" strokeWidth="0.35" />
+      <text x={w / 2} y="4.3" textAnchor="middle" fontSize="2.6" fontWeight="800" fill="#1d2126">SPEED</text>
+      <text x={w / 2} y="7.2" textAnchor="middle" fontSize="2.6" fontWeight="800" fill="#1d2126">LIMIT</text>
+      <text x={w / 2} y={h - 2.2} textAnchor="middle" fontSize={limit >= 100 ? 5.4 : 7} fontWeight="800" fill="#1d2126">{limit}</text>
+    </g>
+  );
+}
+
 export default function IntersectionCanvas({ design, geom, selection, phase, onSelect, onBearing, onDragEnd, svgRef }) {
   const [frozen, setFrozen] = useState(null);
   const [view, setView] = useState(null); // null: fit the whole design
@@ -169,13 +168,15 @@ export default function IntersectionCanvas({ design, geom, selection, phase, onS
         const d = movementPath(geom, leg.id, turn, item, rank, lanes.length);
         if (d) moves.push({ d, color: phaseColor(leg.movements[turn].phase), permissive: turn === 'L' && leg.movements.L.treatment === 'permissive' });
       });
-      if (turn === 'R' && selectedLeg.cs.free.length && selection.type === 'leg') {
-        const d = freeRightPath(geom, leg.id, 0);
+      if (turn === 'R' && selectedLeg.slip && selection.type === 'leg') {
+        const d = freeRightPath(geom, leg.id);
         if (d) moves.push({ d, color: phaseColor(leg.movements.R.phase), permissive: false });
       }
     }
     return { moves, crossings: [] };
   }, [design, geom, phase, selectedLeg, selection]);
+
+  const slips = geom.legs.filter((g) => g.slip).map((g) => ({ g, slip: g.slip }));
 
   const markers = useMarkers(overlay ? [...overlay.moves, ...overlay.crossings].map((m) => m.color) : []);
 
@@ -306,6 +307,13 @@ export default function IntersectionCanvas({ design, geom, selection, phase, onS
           <line x1={g.cs.sidewalkIn[1]} x2={g.cs.sidewalkIn[1]} y1={g.D} y2={g.L} stroke={COLORS.curb} strokeWidth="0.4" />
         </g>
       ))}
+      {slips.map(({ g, slip }) => (
+        <g key={`slipwalk${g.id}`}>
+          <polygon points={slip.sidewalk.map(pt).join(' ')} fill={COLORS.sidewalk} stroke={COLORS.sidewalk} strokeWidth="0.6" strokeLinejoin="round" />
+          <polygon points={slip.taper.sidewalk.map(pt).join(' ')} fill={COLORS.sidewalk} />
+          <polygon points={slip.receiving.sidewalk.map(pt).join(' ')} fill={COLORS.sidewalk} />
+        </g>
+      ))}
       <polygon points={geom.asphaltCore.map(pt).join(' ')} fill={COLORS.asphalt} />
       {geom.legs.map((g) => (
         <g key={`as${g.id}`} transform={g.matrix}>
@@ -313,16 +321,47 @@ export default function IntersectionCanvas({ design, geom, selection, phase, onS
         </g>
       ))}
       {geom.fillets.map((d, i) => <path key={`f${i}`} d={d} fill={COLORS.asphalt} />)}
-      {geom.legs.map((g) => g.cs.free.map((item, i) => {
-        const d = freeRightPath(geom, g.id, i);
-        return d ? <path key={`slip${g.id}${i}`} d={d} fill="none" stroke={COLORS.asphalt} strokeWidth={item.x1 - item.x0} /> : null;
-      }))}
+      {slips.map(({ g, slip }) => (
+        <g key={`slip${g.id}`} style={{ cursor: 'pointer' }}
+          onClick={(e) => { e.stopPropagation(); onSelect({ type: 'leg', legId: g.id }); }}>
+          <polygon points={slip.taper.asphalt.map(pt).join(' ')} fill={COLORS.asphalt} />
+          <polygon points={slip.receiving.asphalt.map(pt).join(' ')} fill={COLORS.asphalt} />
+          <polygon points={slip.asphalt.map(pt).join(' ')} fill={COLORS.asphalt} stroke={COLORS.asphalt} strokeWidth="0.6" strokeLinejoin="round" />
+          {slip.island && (
+            <path d={slip.island} fill={COLORS.median} stroke={COLORS.curb} strokeWidth="0.9" strokeLinejoin="round" />
+          )}
+        </g>
+      ))}
 
       {/* Markings and click targets, leg by leg */}
       {geom.legs.map((g) => (
         <g key={`mk${g.id}`} style={{ cursor: 'pointer' }}
           onClick={(e) => { e.stopPropagation(); onSelect({ type: 'leg', legId: g.id }); }}>
           <LegMarkings g={g} selection={selection && selection.legId === g.id ? selection : null} onSelect={onSelect} />
+        </g>
+      ))}
+
+      {/* Slip-lane markings: arrows, lane lines, yield line, crossing */}
+      {slips.map(({ g, slip }) => (
+        <g key={`slipmk${g.id}`} pointerEvents="none">
+          {slip.taper.line && (
+            <line x1={slip.taper.line[0].x} y1={slip.taper.line[0].y} x2={slip.taper.line[1].x} y2={slip.taper.line[1].y}
+              stroke={COLORS.marking} strokeWidth="0.45" />
+          )}
+          {slip.receiving.lines.map((l, i) => (
+            <line key={i} x1={l.a.x} y1={l.a.y} x2={l.b.x} y2={l.b.y} stroke={COLORS.marking} strokeWidth="0.45" strokeDasharray={l.dash || undefined} />
+          ))}
+          {slip.receiving.teeth.map((tri, i) => <polygon key={`t${i}`} points={tri.map(pt).join(' ')} fill={COLORS.marking} />)}
+          {slip.arrows.map((a, i) => (
+            <g key={`a${i}`} transform={`translate(${a.x} ${a.y}) rotate(${a.rot})`}><LaneGlyph turns={['R']} /></g>
+          ))}
+          {slip.crosswalk && (
+            <g transform={`translate(${slip.crosswalk.x} ${slip.crosswalk.y}) rotate(${slip.crosswalk.rot})`}>
+              {Array.from({ length: Math.floor((slip.crosswalk.w + 1) / 3.2) }, (_, k) => (
+                <rect key={k} x={-slip.crosswalk.w / 2 + 0.7 + k * 3.2} y={-4} width={1.8} height={8} fill={COLORS.marking} />
+              ))}
+            </g>
+          )}
         </g>
       ))}
 
@@ -362,15 +401,16 @@ export default function IntersectionCanvas({ design, geom, selection, phase, onS
       {/* Street labels and rotate handles */}
       {geom.legs.map((g) => (
         <g key={`lb${g.id}`}>
-          <text x={g.labelAt.x} y={g.labelAt.y} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={COLORS.text}
+          <text x={g.labelTextX} y={g.labelAt.y} textAnchor="middle" fontSize="7.5" fontWeight="700" fill={COLORS.text}
             stroke={COLORS.land} strokeWidth="2" paintOrder="stroke" style={{ cursor: 'pointer' }}
             onClick={(e) => { e.stopPropagation(); onSelect({ type: 'leg', legId: g.id }); }}>
             {g.leg.street || `Approach ${g.leg.approachId}`}
           </text>
-          <text x={g.labelAt.x} y={g.labelAt.y + 8.5} textAnchor="middle" fontSize="5.2" fill="#5b616a"
+          <text x={g.labelTextX} y={g.labelAt.y + 8.5} textAnchor="middle" fontSize="5.2" fill="#5b616a"
             stroke={COLORS.land} strokeWidth="1.6" paintOrder="stroke" pointerEvents="none">
             {`${bearingToTravel(g.leg.bearing) || ''} · ${Math.round(g.leg.bearing)}° · ${g.leg.approachId}`}
           </text>
+          {g.speedSign && <SpeedSign sign={g.speedSign} />}
           <g data-export="skip" transform={`translate(${g.handle.x} ${g.handle.y})`} style={{ cursor: 'grab' }}
             onPointerDown={(e) => startDrag(e, g.id)} onClick={(e) => e.stopPropagation()}>
             <title>{`Drag to rotate ${legLabel(g.leg)} (Shift for 1°)`}</title>

@@ -39,6 +39,17 @@ export const TECHNOLOGIES = ['inductive_loop', 'radar', 'microwave', 'lidar', 'm
 export const VEHICLE_TYPES = ['', 'car', 'truck', 'bus', 'bicycle'];
 export const MEDIAN_TYPES = { none: 'None (double yellow)', paint: 'Painted', raised: 'Raised' };
 export const FREE_RIGHT_PED = { '': 'No crossing', P: 'Ped crossing', PI: 'Ped crossing, improved' };
+/**
+ * Where a free-right slip ends up. GTSS free_right has no field for this, so
+ * it lives in the design (autosave, share links) and not in an export.
+ */
+export const FREE_RIGHT_RECEIVING = { merge: 'Merges into the receiving lane', added: 'Gets its own receiving lane' };
+/** How far the slip reaches back along each leg; also design-only. */
+export const FREE_RIGHT_SIZES = {
+  compact: 'Compact (island at the crosswalks)',
+  standard: 'Standard',
+  long: 'Long (deceleration lane)',
+};
 
 let counter = 0;
 export function uid(prefix = 'id') {
@@ -93,7 +104,7 @@ export function makeLeg(opts = {}) {
     sidewalk: 8,
     movements: emptyMovements(),
     crosswalk: { enabled: true, pedPhase: '', length: '', lengthSig: null },
-    freeRight: { lanes: 0, ped: '' },
+    freeRight: { lanes: 0, ped: '', receiving: 'merge', size: 'standard' },
     detectors: [],
     extra: {},
     ...rest,
@@ -605,6 +616,7 @@ export function validate(design) {
       }
     });
     if (leg.crosswalk.enabled && !leg.crosswalk.pedPhase) warn(`${label}: the crosswalk has no ped phase.`, leg.id);
+    if (leg.freeRight.lanes > 0 && !turnTargets(design, leg).R) warn(`${label}: the free right has no leg to turn onto.`, leg.id);
 
     for (const det of leg.detectors) {
       if (det.laneId && !findLane(leg, det.laneId)) warn(`${label}: detector ${det.channel} is on a lane that no longer exists.`, leg.id);
@@ -771,7 +783,12 @@ export function normalizeDesign(input) {
       lengthSig: cw.lengthSig == null ? null : str(cw.lengthSig),
     };
     const fr = obj(l.freeRight);
-    leg.freeRight = { lanes: Math.max(0, Math.round(num(fr.lanes, 0))), ped: FREE_RIGHT_PED[fr.ped] !== undefined ? fr.ped : '' };
+    leg.freeRight = {
+      lanes: Math.max(0, Math.round(num(fr.lanes, 0))),
+      ped: FREE_RIGHT_PED[fr.ped] !== undefined ? fr.ped : '',
+      receiving: FREE_RIGHT_RECEIVING[fr.receiving] ? fr.receiving : 'merge',
+      size: FREE_RIGHT_SIZES[fr.size] ? fr.size : 'standard',
+    };
     leg.extra = obj(l.extra);
     leg.detectors = arr(l.detectors).map((rawDet) => {
       const d = obj(rawDet);

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import LaneGlyph from './LaneGlyph.jsx';
 import { phaseColor } from '../palette.js';
 import {
-  findLeg, moveLane, addLane, removeLane, makeOutbound, legLabel, addLeg, TURN_LABELS, medianWidth, uid,
+  findLeg, moveLane, addLane, removeLane, makeOutbound, legLabel, addLeg, TURN_LABELS, medianWidth, uid, FREE_RIGHT_SIZES,
 } from '../lib/model.js';
 import { bearingToTravel } from '../lib/gtss.js';
 
@@ -177,10 +177,32 @@ export default function LegStrip({ design, legId, selection, onSelect, update })
     side('bki', 'bike', leg.bikeIn, 'Bike', <span className="bike-icon">🚲</span>, () => edit((l) => { l.bikeIn = 0; }));
   }
   if (leg.freeRight.lanes > 0) {
-    side('isl', 'island', 6, 'Island', null, null, null);
+    // The slip leaves before the stop bar, behind a porkchop island; the tile
+    // stands for it, and says where it ends up.
+    const added = leg.freeRight.receiving === 'added';
+    const sizes = Object.keys(FREE_RIGHT_SIZES);
+    const size = leg.freeRight.size || 'standard';
+    const nextSize = sizes[(sizes.indexOf(size) + 1) % sizes.length];
     for (let i = 0; i < leg.freeRight.lanes; i += 1) {
-      side(`fr${i}`, 'inbound free', 12, 'Free right', <Glyph turns={['R']} />,
-        () => edit((l) => { l.freeRight.lanes = Math.max(0, l.freeRight.lanes - 1); }));
+      side(`fr${i}`, 'inbound free', 12, 'Free right', (
+        <>
+          <Glyph turns={['R']} />
+          {i === leg.freeRight.lanes - 1 && (
+            <button type="button" className="tile-toggle"
+              title={`${FREE_RIGHT_SIZES[size]}. Click for ${nextSize}.`}
+              onClick={(e) => { e.stopPropagation(); edit((l) => { l.freeRight.size = nextSize; }); }}>
+              {size}
+            </button>
+          )}
+          {i === leg.freeRight.lanes - 1 && (
+            <button type="button" className="tile-toggle"
+              title={added ? 'Gets its own receiving lane. Click to make it merge.' : 'Merges into the receiving lane. Click to give it its own.'}
+              onClick={(e) => { e.stopPropagation(); edit((l) => { l.freeRight.receiving = added ? 'merge' : 'added'; }); }}>
+              {added ? 'own lane' : 'merges'}
+            </button>
+          )}
+        </>
+      ), () => edit((l) => { l.freeRight.lanes = Math.max(0, l.freeRight.lanes - 1); }));
     }
   }
   if (leg.sidewalk > 0) side('swi', 'sidewalk', leg.sidewalk, 'Sidewalk', null, null, null);

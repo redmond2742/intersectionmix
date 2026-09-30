@@ -5,7 +5,7 @@ import {
   moveLane, setBearing, addDetector, addStopBarDetectors, addAdvanceDetectors, autoAssignNema,
   autoNumberChannels, crosswalkLengthFt, crossSectionSig, lanePhase, canonicalTurns, makeOutbound,
   TURNS, TURN_LABELS, LEFT_TREATMENTS, LEFT_TREATMENT_LABELS, PURPOSES, MODES, TECHNOLOGIES, VEHICLE_TYPES,
-  MEDIAN_TYPES, FREE_RIGHT_PED, usedPhases, uid,
+  MEDIAN_TYPES, FREE_RIGHT_PED, FREE_RIGHT_RECEIVING, FREE_RIGHT_SIZES, usedPhases, uid,
 } from '../lib/model.js';
 import { bearingToTravel, bearingToOrigin } from '../lib/gtss.js';
 
@@ -202,6 +202,16 @@ function LegPanel({ design, leg, update, onSelect }) {
         <Field label="Free-right lanes"><Num value={leg.freeRight.lanes} min={0} max={2} onChange={(v) => edit('fr', (l) => { l.freeRight.lanes = v; })} /></Field>
         {leg.freeRight.lanes > 0 && (
           <Field label="Free-right crossing"><Choice value={leg.freeRight.ped} options={FREE_RIGHT_PED} onChange={(v) => edit(null, (l) => { l.freeRight.ped = v; })} /></Field>
+        )}
+        {leg.freeRight.lanes > 0 && (
+          <Field label="Free-right size">
+            <Choice value={leg.freeRight.size} options={FREE_RIGHT_SIZES} onChange={(v) => edit(null, (l) => { l.freeRight.size = v; })} />
+          </Field>
+        )}
+        {leg.freeRight.lanes > 0 && (
+          <Field label="Free-right receiving" hint="Size and receiving aren't part of GTSS; they're kept in the design and share links.">
+            <Choice value={leg.freeRight.receiving} options={FREE_RIGHT_RECEIVING} onChange={(v) => edit(null, (l) => { l.freeRight.receiving = v; })} />
+          </Field>
         )}
       </div>
 

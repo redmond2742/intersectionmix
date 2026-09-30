@@ -12,9 +12,13 @@
  * inside <g transform="matrix(...)">. Approach traffic travels toward -Y.
  *
  * Cross-section, from the centreline outward on the approach side: half the
- * median, approach lanes (inside lane first, GTSS lane 1), bike lane, then,
- * behind an island, any free-right lanes, then sidewalk. The receiving side
- * mirrors it without the free rights.
+ * median, approach lanes (inside lane first, GTSS lane 1), bike lane, then
+ * sidewalk. The receiving side mirrors it.
+ *
+ * A free right is not part of the cross-section. It leaves the approach just
+ * upstream of the stop bar on a short deceleration taper, runs a gentle curve
+ * behind a porkchop island in the corner, and either merges into the
+ * receiving leg's outer lane or continues as a lane of its own there.
  *
  * Framework free.
  */
@@ -24,8 +28,28 @@ import { medianWidth, turnTargets, findLeg, TURNS } from './model.js';
 export const CROSSWALK_WIDTH = 10;
 export const STOP_BAR_GAP = 4;
 export const CORNER_RADIUS = 22;
-export const ISLAND_WIDTH = 6;
 export const FREE_LANE_WIDTH = 12;
+/** The speed limit sign beside each street label: an R2-1, 24 x 30 in proportion. */
+export const SPEED_SIGN = { w: 12.8, h: 16, gap: 4 };
+/** Radius of the porkchop's nose, in the corner. */
+export const ISLAND_NOSE = 4;
+/** How far the slip bows toward the corner, as a share of its length. */
+export const SLIP_BEND = 0.3;
+/**
+ * Free-right sizes, in feet.
+ *   start     where the island's tip meets the approach curb, past that leg's crosswalk
+ *   end       where it meets the receiving curb, past that leg's crosswalk
+ *   parallel  deceleration lane at full width before the slip, then
+ *   taper     the taper into it
+ *   merge     length of the taper where a merging slip joins the receiving lane
+ * Compact puts the island at the two crosswalks, with no deceleration lane:
+ * the tight corner slip common on urban arterials.
+ */
+export const SLIP_SIZES = {
+  compact: { start: 10, end: 8, parallel: 0, taper: 30, merge: 70 },
+  standard: { start: 24, end: 12, parallel: 30, taper: 50, merge: 100 },
+  long: { start: 60, end: 30, parallel: 80, taper: 70, merge: 140 },
+};
 /** How far past the stop bar a leg is drawn. */
 export const VIEW_LENGTH = 150;
 /** Beyond this distance past the stop bar, far detectors are drawn compressed. */
@@ -60,17 +84,6 @@ export function crossSection(leg) {
   });
   const bikeIn = Number(leg.bikeIn) > 0 ? [x, (x += Number(leg.bikeIn))] : null;
   const curbIn = x;
-  let island = null;
-  const free = [];
-  if (leg.freeRight && leg.freeRight.lanes > 0) {
-    island = [x, (x += ISLAND_WIDTH)];
-    for (let i = 0; i < leg.freeRight.lanes; i += 1) {
-      const x0 = x;
-      x += FREE_LANE_WIDTH;
-      free.push({ x0, x1: x, cx: (x0 + x) / 2 });
-    }
-  }
-  const outerIn = x;
   const sidewalk = Math.max(0, Number(leg.sidewalk) || 0);
 
   let y = -half;
@@ -88,10 +101,7 @@ export function crossSection(leg) {
     inbound,
     bikeIn,
     curbIn,
-    island,
-    free,
-    outerIn,
-    sidewalkIn: [outerIn, outerIn + sidewalk],
+    sidewalkIn: [curbIn, curbIn + sidewalk],
     outbound,
     bikeOut,
     curbOut,
@@ -190,11 +200,20 @@ export function computeGeometry(design) {
     // The street label sits past the handle, far enough along the leg that
     // its box clears the handle whichever way the leg points.
     const name = g.leg.street || `Approach ${g.leg.approachId}`;
-    g.labelWidth = Math.max(name.length * 4.3, 22 * 2.9);
-    const clearX = Math.abs(g.u.x) > 1e-6 ? (g.labelWidth / 2 + 9) / Math.abs(g.u.x) : Infinity;
+    // The label block is the street name and, beside it, a speed limit sign.
+    const speed = Number(g.leg.speed);
+    g.speedLimit = Number.isFinite(speed) && speed > 0 ? Math.round(speed) : null;
+    g.textWidth = Math.max(name.length * 4.3, 22 * 2.9);
+    g.labelWidth = g.textWidth + (g.speedLimit ? SPEED_SIGN.gap + SPEED_SIGN.w : 0);
+    const clearX = Math.abs(g.u.x) > 1e-6 ? (g.labelWidth / 2 + 13) / Math.abs(g.u.x) : Infinity;
     const clearY = Math.abs(g.u.y) > 1e-6 ? 20 / Math.abs(g.u.y) : Infinity;
     g.labelAt = g.world(far + 12 + Math.min(clearX, clearY), (g.cs.curbIn + g.cs.curbOut) / 2);
     if (g.u.y < -0.5) g.labelAt = { x: g.labelAt.x, y: g.labelAt.y - 8 };
+    const left = g.labelAt.x - g.labelWidth / 2;
+    g.labelTextX = left + g.textWidth / 2;
+    g.speedSign = g.speedLimit
+      ? { x: left + g.textWidth + SPEED_SIGN.gap, y: g.labelAt.y - 9, w: SPEED_SIGN.w, h: SPEED_SIGN.h, limit: g.speedLimit }
+      : null;
   }
 
   // The middle: a polygon through each corner, or through the curb points at
@@ -209,7 +228,8 @@ export function computeGeometry(design) {
       if (outerOk) sidewalkCore.push(c.outer.point);
       else sidewalkCore.push(c.outer.pI, c.outer.pJ);
       const radius = Math.min(CORNER_RADIUS, Math.max(0, c.gi.L - c.inner.hit.a - 5), Math.max(0, c.gj.L - c.inner.hit.b - 5));
-      if (radius > 1 && c.gap < 170) {
+      c.radius = radius > 1 && c.gap < 170 ? radius : 0;
+      if (c.radius) {
         const p1 = add(c.inner.point, mul(c.gi.u, radius));
         const p2 = add(c.inner.point, mul(c.gj.u, radius));
         fillets.push(`M${pt(p1)} Q${pt(c.inner.point)} ${pt(p2)} L${pt(c.inner.point)} Z`);
@@ -221,11 +241,21 @@ export function computeGeometry(design) {
   }
 
   const byId = new Map(legs.map((g) => [g.id, g]));
+  for (const g of legs) {
+    if (!(g.leg.freeRight && g.leg.freeRight.lanes > 0)) continue;
+    const target = byId.get(turnTargets({ legs: design.legs }, g.leg).R);
+    if (!target) continue;
+    const c = corners.find((item) => item.valid
+      && ((item.gi === g && item.gj === target) || (item.gi === target && item.gj === g)));
+    g.slip = slipGeometry(g, target, c);
+  }
+
   const points = [];
   for (const g of legs) {
+    if (g.slip) points.push(...g.slip.bounds);
     points.push(g.world(g.L, g.cs.sidewalkIn[1]), g.world(g.L, g.cs.sidewalkOut[0]), g.handle);
     points.push(
-      { x: g.labelAt.x - g.labelWidth / 2, y: g.labelAt.y - 8 },
+      { x: g.labelAt.x - g.labelWidth / 2, y: g.labelAt.y - 10 },
       { x: g.labelAt.x + g.labelWidth / 2, y: g.labelAt.y + 12 },
     );
     points.push(g.world(g.D, g.cs.sidewalkIn[1]), g.world(g.D, g.cs.sidewalkOut[0]));
@@ -242,6 +272,167 @@ export function computeGeometry(design) {
   };
 
   return { legs, byId, corners, asphaltCore, sidewalkCore, fillets, bounds, far };
+}
+
+/* ------------------------------------------------------------------ */
+/* Free-right slip lanes                                               */
+/* ------------------------------------------------------------------ */
+
+function cubicAt(p0, p1, p2, p3, t) {
+  const m = 1 - t;
+  const a = m * m * m;
+  const b = 3 * m * m * t;
+  const c = 3 * m * t * t;
+  const d = t * t * t;
+  const point = { x: a * p0.x + b * p1.x + c * p2.x + d * p3.x, y: a * p0.y + b * p1.y + c * p2.y + d * p3.y };
+  const tangent = add(add(mul(sub(p1, p0), 3 * m * m), mul(sub(p2, p1), 6 * m * t)), mul(sub(p3, p2), 3 * t * t));
+  const l = len(tangent) || 1;
+  return { point, tangent: mul(tangent, 1 / l) };
+}
+
+/** Right of a direction of travel, in world coordinates. */
+const rightOf = (v) => ({ x: -v.y, y: v.x });
+/** SVG rotate() angle that turns a glyph drawn pointing up (-y) to face v. */
+const glyphAngle = (v) => (Math.atan2(v.x, -v.y) * 180) / Math.PI;
+
+/**
+ * The slip from approach `g` into `t`, the leg its right turn leaves on, and
+ * the porkchop island between it and the corner `c`.
+ *
+ * The island's slip-side edge is laid out first: a curve from a tip on the
+ * approach curb to a tip on the receiving curb. It leaves each curb at an
+ * angle (half-way between the curb and the chord), so the tips are wedges
+ * rather than slivers, and it bows gently toward the corner, as a slip lane
+ * turning right does. The slip lane lies to the right of that edge, and the
+ * island is what is left between it and the two curbs.
+ */
+function slipGeometry(g, t, c) {
+  const { leg } = g;
+  const lanes = leg.freeRight.lanes;
+  const w = FREE_LANE_WIDTH * lanes;
+  const sw = Math.max(0, Number(leg.sidewalk) || 0);
+  const swT = Math.max(0, Number(t.leg.sidewalk) || 0);
+  const size = SLIP_SIZES[leg.freeRight.size] || SLIP_SIZES.standard;
+  const aY = g.cwEnd + size.start;
+  const bY = t.cwEnd + size.end;
+  // Keep the tapers on the legs as drawn.
+  const room = Math.max(10, g.L - aY - 6);
+  const squeeze = Math.min(1, room / (size.parallel + size.taper));
+  const parallel = size.parallel * squeeze;
+  const decel = size.taper * squeeze;
+  const mergeLength = Math.min(size.merge, Math.max(20, t.L - bY - 6));
+  const ci = g.cs.curbIn;
+  const co = t.cs.curbOut;
+  const L = (y, x) => g.world(y, x);
+  const T = (y, x) => t.world(y, x);
+
+  const tipA = L(aY, ci);
+  const tipB = T(bY, co);
+  const chordV = sub(tipB, tipA);
+  const chord = mul(chordV, 1 / (len(chordV) || 1));
+  const unit = (v) => mul(v, 1 / (len(v) || 1));
+  const t0 = unit(add(g.d, chord));
+  const t3 = unit(add(t.u, chord));
+  const k = len(chordV) * SLIP_BEND;
+  const q1 = add(tipA, mul(t0, k));
+  const q2 = sub(tipB, mul(t3, k));
+
+  const N = 32;
+  const samples = Array.from({ length: N + 1 }, (_, i) => cubicAt(tipA, q1, q2, tipB, i / N));
+  const edge = (offset) => samples.map(({ point, tangent }) => add(point, mul(rightOf(tangent), offset)));
+  const inner = samples.map(({ point }) => point);
+  const centre = edge(w / 2);
+  const outer = edge(w);
+  const walk = edge(w + sw);
+  const at = (i) => ({ point: centre[i], tangent: samples[i].tangent });
+
+  // Deceleration lane on the approach, meeting the slip's two edges.
+  const taper = {
+    asphalt: [tipA, outer[0], L(aY + parallel, ci + w), L(aY + parallel + decel, ci)],
+    sidewalk: [
+      outer[0], L(aY + parallel, ci + w), L(aY + parallel + decel, ci),
+      L(aY + parallel + decel, ci + sw), L(aY + parallel, ci + w + sw), walk[0],
+    ],
+    line: parallel > 0 ? [tipA, L(aY + parallel, ci)] : null,
+  };
+
+  // The receiving end: a lane of its own to the end of the leg, or a taper into the outer lane.
+  const mode = leg.freeRight.receiving === 'added' ? 'added' : 'merge';
+  const receiving = { mode, lines: [], teeth: [] };
+  if (mode === 'added') {
+    receiving.asphalt = [tipB, outer[N], T(t.L, co - w), T(t.L, co)];
+    receiving.sidewalk = [outer[N], walk[N], T(t.L, co - w - swT), T(t.L, co - w)];
+    receiving.lines.push({ a: tipB, b: T(bY + 50, co), dash: null });
+    receiving.lines.push({ a: T(bY + 50, co), b: T(t.L, co), dash: '10 30' });
+  } else {
+    const end = bY + mergeLength;
+    receiving.asphalt = [tipB, outer[N], T(bY + 20, co - w), T(end, co)];
+    receiving.sidewalk = [
+      outer[N], walk[N], T(bY + 20, co - w - swT), T(end, co - swT), T(end, co), T(bY + 20, co - w),
+    ];
+    // A yield line across the end of the slip, its teeth pointing back up it.
+    const across = unit(sub(tipB, outer[N]));
+    const span = len(sub(tipB, outer[N]));
+    const back = mul(t3, -2.6);
+    for (let d = 0.6; d + 2 <= span - 0.4; d += 3) {
+      const b0 = add(outer[N], mul(across, d));
+      const b1 = add(outer[N], mul(across, d + 2));
+      receiving.teeth.push([b0, b1, add(mul(add(b0, b1), 0.5), back)]);
+    }
+  }
+
+  // The island: approach tip, along the approach curb to a small nose in the
+  // corner, along the receiving curb, then back along the slip's inside edge.
+  let island = null;
+  if (c && c.inner.point) {
+    const cornerG = c.gi === g ? c.inner.hit.a : c.inner.hit.b;
+    const cornerT = c.gi === g ? c.inner.hit.b : c.inner.hit.a;
+    if (aY - cornerG > 6 && bY - cornerT > 6) {
+      // The island's corner nose is nearly square: the corner's full curb
+      // return would round away most of a porkchop this size.
+      const r = Math.max(0, Math.min(ISLAND_NOSE, c.radius || 0, aY - cornerG - 4, bY - cornerT - 4));
+      const C = c.inner.point;
+      const f1 = add(C, mul(g.u, r));
+      const f2 = add(C, mul(t.u, r));
+      const back = inner.slice(1, -1).reverse().map(pt).join(' L');
+      island = `M${pt(tipA)} L${pt(f1)} Q${pt(C)} ${pt(f2)} L${pt(tipB)} L${back} Z`;
+    }
+  }
+
+  const arrows = [];
+  for (let i = 0; i < lanes; i += 1) {
+    const { point, tangent } = at(Math.round(N * 0.12));
+    const offset = (i - (lanes - 1) / 2) * FREE_LANE_WIDTH;
+    const p = add(point, mul(rightOf(tangent), offset));
+    arrows.push({ x: p.x, y: p.y, rot: glyphAngle(tangent) });
+  }
+  let crosswalk = null;
+  if (leg.freeRight.ped) {
+    const { point, tangent } = at(Math.round(N * 0.55));
+    crosswalk = { x: point.x, y: point.y, rot: glyphAngle(tangent), w };
+  }
+
+  // With no parallel lane, the turn starts from the approach's outer lane, in the taper.
+  const start = parallel > 0 ? L(aY + parallel - 4, ci + w / 2) : L(aY + decel * 0.5, ci + w / 4);
+  const along = centre.map((p) => `L${pt(p)}`).join(' ');
+  const outerLane = t.cs.outbound.length ? t.cs.outbound[t.cs.outbound.length - 1].cx : co - 6;
+  const tail = mode === 'added'
+    ? `L${pt(T(bY + 45, co - w / 2))}`
+    : `L${pt(T(bY + mergeLength * 0.4, co - w / 2))} L${pt(T(bY + mergeLength, outerLane))}`;
+
+  return {
+    targetId: t.id,
+    width: w,
+    asphalt: [...outer, ...[...inner].reverse()],
+    sidewalk: [...walk, ...[...outer].reverse()],
+    island,
+    taper,
+    receiving,
+    arrows,
+    crosswalk,
+    path: `M${pt(start)} L${pt(L(aY + 2, ci + w / 2))} ${along} ${tail}`,
+    bounds: [...walk, ...taper.sidewalk, ...receiving.sidewalk],
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -282,22 +473,10 @@ export function movementPath(geom, legId, turn, laneItem, rank = 0, count = 1) {
   return `M${pt(start)} L${pt(p0)} C${pt(add(p0, mul(g.d, k)))} ${pt(sub(p3, mul(target.u, k)))} ${pt(p3)} L${pt(end)}`;
 }
 
-/** The free-right slip: from upstream of the stop bar, cutting the corner, into the target's outer lane. */
-export function freeRightPath(geom, legId, index = 0) {
+/** The free right's movement, along its slip lane. */
+export function freeRightPath(geom, legId) {
   const g = geom.byId.get(legId);
-  if (!g || !g.cs.free[index]) return null;
-  const targets = turnTargets({ legs: geom.legs.map((item) => item.leg) }, g.leg);
-  const target = geom.byId.get(targets.R);
-  if (!target) return null;
-  const x = g.cs.free[index].cx;
-  const start = g.world(g.S + 40, x);
-  const p0 = g.world(g.S + 8, x);
-  const outer = target.cs.outbound.length ? target.cs.outbound[target.cs.outbound.length - 1].cx : target.cs.curbOut + 6;
-  const tx = outer - (target.cs.bikeOut ? 0 : 0);
-  const p3 = target.world(target.cwEnd + 30, tx);
-  const end = target.world(target.cwEnd + 50, tx);
-  const k = Math.max(10, len(sub(p3, p0)) * 0.45);
-  return `M${pt(start)} L${pt(p0)} C${pt(add(p0, mul(g.d, k)))} ${pt(sub(p3, mul(target.u, k)))} ${pt(p3)} L${pt(end)}`;
+  return g && g.slip ? g.slip.path : null;
 }
 
 /**
@@ -325,8 +504,8 @@ export function phaseMovements(design, geom, phase, { perLane = false } = {}) {
         const d = movementPath(geom, g.id, turn, item, perLane ? rank : Math.floor((lanes.length - 1) / 2), perLane ? lanes.length : lanes.length);
         if (d) out.push({ legId: g.id, laneId: item.lane.id, turn, permissive, d });
       });
-      if (turn === 'R' && g.cs.free.length) {
-        const d = freeRightPath(geom, g.id, 0);
+      if (turn === 'R' && g.slip) {
+        const d = g.slip.path;
         if (d) out.push({ legId: g.id, laneId: null, turn, permissive, d, free: true });
       }
     }

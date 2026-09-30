@@ -65,7 +65,7 @@ describe('import', () => {
     const main = design.legs.find((l) => l.approachId === '1-2');
     expect(main.inbound.map((l) => turnsKey(l.turns))).toEqual(['L', 'T', 'T']);
     expect(main.movements.L.phase).toBe('1');
-    expect(main.freeRight).toEqual({ lanes: 1, ped: 'P' });
+    expect(main.freeRight).toEqual({ lanes: 1, ped: 'P', receiving: 'merge', size: 'standard' });
     expect(main.extra).toEqual({ district: 'north' });
   });
 
