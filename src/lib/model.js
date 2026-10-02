@@ -18,6 +18,7 @@
  */
 
 import { bearingToTravel, compareIds } from './gtss.js';
+import { normalizePin } from './cameras.js';
 
 export const DESIGN_VERSION = 1;
 export const TURNS = ['U', 'L', 'T', 'R'];
@@ -141,6 +142,7 @@ export function emptyDesign() {
     diagonals: [],
     phaseRowExtra: {},
     unplacedDetectors: [],
+    cameras: [], // camera pins for the 3D view; see cameras.js
     notes: [],
     source: null,
   };
@@ -745,6 +747,7 @@ export function normalizeDesign(input) {
   design.phaseRowExtra = obj(raw.phaseRowExtra);
   design.unplacedDetectors = arr(raw.unplacedDetectors).filter((d) => d && typeof d === 'object');
   design.notes = arr(raw.notes).map(String);
+  design.cameras = arr(raw.cameras).map(normalizePin).filter(Boolean);
   design.source = raw.source && typeof raw.source === 'object' ? raw.source : null;
 
   design.legs = raw.legs.map((rawLeg) => {

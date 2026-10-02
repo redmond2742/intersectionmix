@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { COLORS, phaseColor } from '../palette.js';
-import { pt, phaseMovements, phaseCrossings } from '../lib/geometry.js';
+import { phaseMovements, phaseCrossings } from '../lib/geometry.js';
+import RoadSkeleton from './RoadSkeleton.jsx';
 import { usedPhases, isOverlap } from '../lib/model.js';
 import { bearingToTravel } from '../lib/gtss.js';
 
@@ -44,20 +45,7 @@ function Diagram({ design, geom, phase, selected, onPick }) {
             <path d="M0 0 L10 5 L0 10 z" fill={color} />
           </marker>
         </defs>
-        <polygon points={geom.asphaltCore.map(pt).join(' ')} fill="#c9ccd1" />
-        {geom.legs.map((g) => (
-          <g key={g.id} transform={g.matrix}>
-            <rect x={g.cs.curbOut} y={0} width={g.cs.curbIn - g.cs.curbOut} height={reach * 1.5} fill="#c9ccd1" />
-          </g>
-        ))}
-        {geom.fillets.map((d, i) => <path key={i} d={d} fill="#c9ccd1" />)}
-        {geom.legs.filter((g) => g.slip).map((g) => (
-          <g key={`slip${g.id}`} fill="#c9ccd1">
-            <polygon points={g.slip.asphalt.map(pt).join(' ')} />
-            <polygon points={g.slip.taper.asphalt.map(pt).join(' ')} />
-            <polygon points={g.slip.receiving.asphalt.map(pt).join(' ')} />
-          </g>
-        ))}
+        <RoadSkeleton geom={geom} length={reach * 1.5} />
         {moves.map((m, i) => (
           <path key={i} d={m.d} fill="none" stroke={color} strokeWidth="5" strokeLinecap="round"
             strokeDasharray={m.permissive ? '9 6' : undefined} markerEnd={`url(#${markerId})`} />

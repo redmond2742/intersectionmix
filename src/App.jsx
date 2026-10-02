@@ -3,6 +3,8 @@ import IntersectionCanvas from './components/IntersectionCanvas.jsx';
 import Inspector from './components/Inspector.jsx';
 import LegStrip from './components/LegStrip.jsx';
 import PhaseDiagrams from './components/PhaseDiagrams.jsx';
+import { ConflictMarker } from './components/ConflictMarkers.jsx';
+import { conflictPoints, CONFLICT_TYPES } from './lib/conflicts.js';
 import SignalPicker from './components/SignalPicker.jsx';
 import ExportMenu from './components/ExportMenu.jsx';
 import { useHistory } from './useHistory.js';
@@ -14,7 +16,9 @@ import { listSignals, designFromGtss, gtssFromDesign } from './lib/gtssMapping.j
 import { readZipText } from './lib/zipReader.js';
 import { zipBlob } from './lib/zipWriter.js';
 import { saveDesign, loadDesign, saveFeed, loadFeed, encodeShare, decodeShare, SHARE_PREFIX } from './lib/store.js';
-import { downloadBlob, slugify, svgMarkup, svgToPngBlob, phaseSheetMarkup } from './lib/download.js';
+import {
+  downloadBlob, slugify, svgMarkup, svgToPngBlob, svgToCanvas, phaseSheetMarkup, addConflictLegend,
+} from './lib/download.js';
 import { designFile, parseDesignFile, detectorCsv, sheetTitle } from './lib/exports.js';
 import { DETECTOR_COLORS, COLORS } from './palette.js';
 
@@ -30,6 +34,7 @@ export default function App() {
   const { design, update, replace, undo, redo, commit } = history;
   const [selection, setSelection] = useState(null);
   const [phase, setPhase] = useState(null);
+  const [showConflicts, setShowConflicts] = useState(false);
   const [feed, setFeed] = useState(() => loadFeed());
   const [picker, setPicker] = useState(null); // { files, label, signals }
   const [show3d, setShow3d] = useState(false);
@@ -41,6 +46,7 @@ export default function App() {
   const linked = useRef(null);
 
   const geom = useMemo(() => computeGeometry(design), [design]);
+  const conflicts = useMemo(() => (showConflicts ? conflictPoints(design, geom) : null), [design, geom, showConflicts]);
   const checks = useMemo(() => validate(design), [design]);
   const attachedFeed = feed && design.source && design.source.feedId === feed.id ? feed : null;
 
@@ -248,6 +254,31 @@ export default function App() {
     }
   };
 
+  /** The plan drawing with the conflict points on it, whether or not they are showing. */
+  const exportConflictImage = async () => {
+    const was = showConflicts;
+    if (!was) {
+      setShowConflicts(true);
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    }
+    if (svgRef.current) {
+      const { markup, width, height } = svgMarkup(svgRef.current, 2000);
+      try {
+        const { counts } = conflictPoints(design, geom);
+        const image = addConflictLegend(await svgToCanvas(markup, width, height), {
+          title: `Conflict points · ${design.name}`,
+          items: Object.entries(CONFLICT_TYPES).map(([type, label]) => ({ type, label, count: counts[type] })),
+          note: `${counts.vehicle} vehicle and ${counts.ped} pedestrian conflict points · all movements, no signals`,
+        });
+        const blob = await new Promise((resolve) => image.toBlob(resolve, 'image/png'));
+        downloadBlob(blob, `${slugify(design.name)}-conflict-points.png`);
+      } catch (err) {
+        say(err.message, 'error');
+      }
+    }
+    if (!was) setShowConflicts(false);
+  };
+
   const exportText = (text, type, name) => downloadBlob(new Blob([text], { type }), name);
 
   const signalCount = attachedFeed ? attachedFeed.signals.length : 0;
@@ -271,6 +302,7 @@ export default function App() {
     { id: 'svg', label: 'Plan drawing (.svg)', detail: 'Vector, for reports and CAD', onSelect: () => exportImage('svg') },
     { id: 'phases-png', label: 'Phase diagrams (.png)', detail: 'Ring-and-barrier sheet', onSelect: () => exportPhaseSheet('png') },
     { id: 'phases-svg', label: 'Phase diagrams (.svg)', detail: 'The same sheet, as vector', onSelect: () => exportPhaseSheet('svg') },
+    { id: 'conflicts', label: 'Conflict points (.png)', detail: 'The plan with diverging, merging, crossing and pedestrian conflicts', onSelect: exportConflictImage },
     { separator: true },
     {
       id: 'detectors',
@@ -339,18 +371,37 @@ export default function App() {
 
       <main className="workspace">
         <section className="canvas-wrap panel">
-          <IntersectionCanvas key={canvasKey} design={design} geom={geom} selection={selection} phase={phase}
+          <IntersectionCanvas key={canvasKey} design={design} geom={geom} selection={selection} phase={phase} conflicts={conflicts}
             onSelect={select} onBearing={onBearing} onDragEnd={commit} svgRef={svgRef} />
           <div className="legend" aria-label="Legend">
-            {Object.entries(DETECTOR_COLORS).map(([purpose, color]) => (
-              <span key={purpose}><i style={{ background: color }} />{purpose}</span>
-            ))}
-            <span><i style={{ background: COLORS.bike }} />bike lane</span>
-            <span className="muted">Drag ⟳ handles to rotate · click to select</span>
+            <label className="check conflict-toggle">
+              <input type="checkbox" checked={showConflicts} onChange={(e) => setShowConflicts(e.target.checked)} />
+              Conflict points
+            </label>
+            {conflicts ? (
+              <>
+                {Object.entries(CONFLICT_TYPES).map(([type, label]) => (
+                  <span key={type}>
+                    <svg width="13" height="13" viewBox="-7 -7 14 14" aria-hidden="true"><ConflictMarker type={type} x={0} y={0} r={5} /></svg>
+                    {label} {conflicts.counts[type]}
+                  </span>
+                ))}
+                <span className="muted">{conflicts.counts.vehicle} vehicle conflict points · all movements, no signals</span>
+              </>
+            ) : (
+              <>
+                {Object.entries(DETECTOR_COLORS).map(([purpose, color]) => (
+                  <span key={purpose}><i style={{ background: color }} />{purpose}</span>
+                ))}
+                <span><i style={{ background: COLORS.bike }} />bike lane</span>
+                <span className="muted">Drag ⟳ handles to rotate · click to select</span>
+              </>
+            )}
           </div>
           {phase && (
             <button type="button" className="phase-flag" onClick={() => setPhase(null)}>Showing phase {phase} ×</button>
           )}
+
         </section>
         <Inspector design={design} selection={selection} update={update} onSelect={select} />
       </main>
@@ -358,7 +409,8 @@ export default function App() {
       <LegStrip design={design} legId={stripLeg || (design.legs[0] && design.legs[0].id)} selection={selection} onSelect={select} update={update} />
 
       <div ref={phasesRef}>
-        <PhaseDiagrams design={design} geom={geom} phase={phase} onPick={(p) => { setPhase(p); if (p) setSelection(null); }} />
+        <PhaseDiagrams design={design} geom={geom} phase={phase}
+          onPick={(p) => { setPhase(p); if (p) setSelection(null); }} />
       </div>
 
       <section className="panel checks">
@@ -409,6 +461,12 @@ export default function App() {
           through unchanged. Everything runs in your browser; share links carry the design in the URL fragment, which is
           never sent to a server.
         </p>
+        <h3>Conflict points</h3>
+        <p>
+          Tick Conflict points under the plan to mark where movements diverge, merge and cross, and where vehicles cross
+          pedestrians: every movement at once, as with no signals. A plain four-leg intersection has 32 vehicle
+          conflict points; a T has 9.
+        </p>
         <h3>3D view</h3>
         <p>
           The 3D view button opens the design in 3D. The road surface is the plan itself, and the sidewalks and islands are
@@ -423,7 +481,7 @@ export default function App() {
       {show3d && (
         <Suspense fallback={<div className="view3d"><div className="view3d-status">Loading 3D engine…</div></div>}>
           <View3D design={design} geom={geom} planSvg={svgRef.current} initialPhase={phase}
-            onClose={() => setShow3d(false)} say={say} />
+            onClose={() => setShow3d(false)} say={say} updateDesign={update} />
         </Suspense>
       )}
       {picker && <SignalPicker feed={picker} onPick={(id) => importSignal(picker, id)} onClose={() => setPicker(null)} />}

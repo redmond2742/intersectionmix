@@ -34,10 +34,14 @@ Everything runs in the browser. There is no server and no account.
   - Switching signals keeps your edits to the previous one.
 - **Saving.** Designs autosave in the browser. **Copy link** packs the design
   into the URL fragment. The fragment is never sent to a server.
+- **Conflict points.** A checkbox under the plan marks diverging, merging, crossing and
+  pedestrian conflicts for every movement, in the FHWA style. A plain four-leg is the textbook
+  32; a T is 9.
 - **Export menu.** Formats:
   - GTSS: the whole feed, or this signal only.
   - Plan drawing: PNG or SVG.
   - Phase-diagram sheet: PNG or SVG.
+  - Plan with conflict points: PNG.
   - Detector list: CSV.
   - Design file: JSON. It keeps everything GTSS can't hold and reopens
     with **Open…**.
@@ -92,6 +96,8 @@ The stack is React and Vite, written in plain JavaScript.
   | `store.js` | Autosave and share links |
   | `gtss.js` | CSV handling |
   | `exports.js` | Design file and detector list |
+  | `conflicts.js` | Conflict points |
+  | `cameras.js` | Camera pins for the 3D view |
   | `zipReader.js`, `zipWriter.js` | Zip handling, from Traffic Signal Kit |
 
 - The 3D view lives in `src/three/`:

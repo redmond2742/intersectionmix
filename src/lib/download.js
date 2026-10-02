@@ -156,3 +156,83 @@ export function phaseSheetMarkup(panel, title) {
   });
   return { markup: `<?xml version="1.0" encoding="UTF-8"?>\n${new XMLSerializer().serializeToString(svg)}`, width, height };
 }
+
+/**
+ * Adds a legend bar under a rendered plan: a title, then each marker with
+ * its label and count, then a note. Markers are drawn as on the plan:
+ * diverging filled, merging half-filled, crossing open, pedestrian a diamond.
+ */
+export function addConflictLegend(plan, { title, items, note }) {
+  const scale = plan.width / 1000;
+  const barHeight = Math.round(96 * scale);
+  const out = document.createElement('canvas');
+  out.width = plan.width;
+  out.height = plan.height + barHeight;
+  const g = out.getContext('2d');
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, out.width, out.height);
+  g.drawImage(plan, 0, 0);
+  g.fillStyle = '#d9dcd5';
+  g.fillRect(0, plan.height, out.width, Math.max(1, Math.round(scale)));
+
+  const pad = 22 * scale;
+  const font = (weight, size) => `${weight} ${Math.round(size * scale)}px Inter, Helvetica, Arial, sans-serif`;
+  const top = plan.height;
+  g.textBaseline = 'middle';
+  g.fillStyle = '#1f2328';
+  g.font = font(700, 17);
+  g.fillText(title, pad, top + 26 * scale);
+
+  const red = '#c92a2a';
+  const blue = '#1971c2';
+  const r = 7 * scale;
+  const line = 2.2 * scale;
+  const marker = (type, x, y) => {
+    g.lineWidth = line;
+    if (type === 'ped') {
+      const s = r * 1.15;
+      g.beginPath();
+      g.moveTo(x, y - s);
+      g.lineTo(x + s, y);
+      g.lineTo(x, y + s);
+      g.lineTo(x - s, y);
+      g.closePath();
+      g.fillStyle = '#d0ebff';
+      g.fill();
+      g.strokeStyle = blue;
+      g.stroke();
+      return;
+    }
+    g.beginPath();
+    g.arc(x, y, r, 0, Math.PI * 2);
+    g.fillStyle = type === 'diverge' ? red : '#ffffff';
+    g.fill();
+    g.strokeStyle = red;
+    g.stroke();
+    if (type === 'merge') {
+      g.beginPath();
+      g.moveTo(x, y - r);
+      g.arc(x, y, r, -Math.PI / 2, Math.PI / 2, true);
+      g.closePath();
+      g.fillStyle = red;
+      g.fill();
+    }
+  };
+
+  let x = pad + r;
+  const y = top + 60 * scale;
+  g.font = font(500, 15);
+  for (const item of items) {
+    marker(item.type, x, y);
+    g.fillStyle = '#1f2328';
+    const text = `${item.label} ${item.count}`;
+    g.fillText(text, x + r + 8 * scale, y);
+    x += r * 2 + 8 * scale + g.measureText(text).width + 26 * scale;
+  }
+  if (note) {
+    g.fillStyle = '#69707a';
+    g.font = font(400, 13);
+    g.fillText(note, x + 4 * scale, y);
+  }
+  return out;
+}

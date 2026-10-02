@@ -422,16 +422,19 @@ function slipGeometry(g, t, c) {
   let crosswalk = null;
   if (leg.freeRight.ped) {
     const { point, tangent } = at(Math.round(N * 0.55));
-    crosswalk = { x: point.x, y: point.y, rot: glyphAngle(tangent), w };
+    const across = mul(rightOf(tangent), w / 2 + 1);
+    crosswalk = { x: point.x, y: point.y, rot: glyphAngle(tangent), w, a: sub(point, across), b: add(point, across) };
   }
 
   // With no parallel lane, the turn starts from the approach's outer lane, in the taper.
   const start = parallel > 0 ? L(aY + parallel - 4, ci + w / 2) : L(aY + decel * 0.5, ci + w / 4);
   const along = centre.map((p) => `L${pt(p)}`).join(' ');
   const outerLane = t.cs.outbound.length ? t.cs.outbound[t.cs.outbound.length - 1].cx : co - 6;
-  const tail = mode === 'added'
-    ? `L${pt(T(bY + 45, co - w / 2))}`
-    : `L${pt(T(bY + mergeLength * 0.4, co - w / 2))} L${pt(T(bY + mergeLength, outerLane))}`;
+  const tailPoints = mode === 'added'
+    ? [T(bY + 45, co - w / 2)]
+    : [T(bY + mergeLength * 0.4, co - w / 2), T(bY + mergeLength, outerLane)];
+  const tail = tailPoints.map((p) => `L${pt(p)}`).join(' ');
+  const pathPoints = [start, L(aY + 2, ci + w / 2), ...centre, ...tailPoints];
 
   return {
     targetId: t.id,
@@ -445,6 +448,10 @@ function slipGeometry(g, t, c) {
     arrows,
     crosswalk,
     path: `M${pt(start)} L${pt(L(aY + 2, ci + w / 2))} ${along} ${tail}`,
+    pathPoints,
+    // Where a slip's traffic leaves the approach, and where a merging slip joins the receiving lane.
+    divergeAt: L(aY + parallel + decel * 0.6, ci + w * 0.2),
+    mergeAt: mode === 'merge' ? T(bY + mergeLength * 0.7, co - w * 0.25) : null,
     bounds: [...walk, ...taper.sidewalk, ...receiving.sidewalk],
   };
 }
@@ -464,8 +471,11 @@ function exitX(target, turn, rank, count) {
   return out[index].cx;
 }
 
-/** SVG path for one lane's movement, from upstream of the stop bar to past the far crosswalk. */
-export function movementPath(geom, legId, turn, laneItem, rank = 0, count = 1) {
+/**
+ * The shape of one lane's movement: a straight run up to the stop bar, a
+ * cubic across the box, and a straight run out past the far crosswalk.
+ */
+function movementShape(geom, legId, turn, laneItem, rank, count) {
   const g = geom.byId.get(legId);
   if (!g) return null;
   const targets = turnTargets({ legs: geom.legs.map((item) => item.leg) }, g.leg);
@@ -478,13 +488,26 @@ export function movementPath(geom, legId, turn, laneItem, rank = 0, count = 1) {
   if (turn === 'U') {
     const p3 = g.world(g.S, tx);
     const k = Math.max(30, Math.abs(x - tx) * 1.2);
-    const end = g.world(g.S + 22, tx);
-    return `M${pt(start)} L${pt(p0)} C${pt(add(p0, mul(g.d, k)))} ${pt(add(p3, mul(g.d, k)))} ${pt(p3)} L${pt(end)}`;
+    return { start, p0, c1: add(p0, mul(g.d, k)), c2: add(p3, mul(g.d, k)), p3, end: g.world(g.S + 22, tx), target };
   }
   const p3 = target.world(target.D, tx);
-  const end = target.world(target.cwEnd + 16, tx);
   const k = Math.max(8, len(sub(p3, p0)) * 0.42);
-  return `M${pt(start)} L${pt(p0)} C${pt(add(p0, mul(g.d, k)))} ${pt(sub(p3, mul(target.u, k)))} ${pt(p3)} L${pt(end)}`;
+  return { start, p0, c1: add(p0, mul(g.d, k)), c2: sub(p3, mul(target.u, k)), p3, end: target.world(target.cwEnd + 16, tx), target };
+}
+
+/** SVG path for one lane's movement, from upstream of the stop bar to past the far crosswalk. */
+export function movementPath(geom, legId, turn, laneItem, rank = 0, count = 1) {
+  const m = movementShape(geom, legId, turn, laneItem, rank, count);
+  if (!m) return null;
+  return `M${pt(m.start)} L${pt(m.p0)} C${pt(m.c1)} ${pt(m.c2)} ${pt(m.p3)} L${pt(m.end)}`;
+}
+
+/** The same movement as a polyline, for finding where paths cross. */
+export function movementPoints(geom, legId, turn, laneItem, rank = 0, count = 1, samples = 24) {
+  const m = movementShape(geom, legId, turn, laneItem, rank, count);
+  if (!m) return null;
+  const curve = Array.from({ length: samples + 1 }, (_, i) => cubicAt(m.p0, m.c1, m.c2, m.p3, i / samples).point);
+  return { points: [m.start, ...curve, m.end], targetId: m.target.id };
 }
 
 /** The free right's movement, along its slip lane. */

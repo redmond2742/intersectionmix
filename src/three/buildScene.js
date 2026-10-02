@@ -411,6 +411,8 @@ export function buildScene({ design, geom, planCanvas, anisotropy = 8 }) {
 
   return {
     root,
+    // What a camera pin can stand on: the ground and the raised surfaces, not cars or trees.
+    surfaces: [ground, land, sidewalks, raised].filter(Boolean),
     center: new THREE.Vector3(((b.minX + b.maxX) / 2) * FT, 0, ((b.minY + b.maxY) / 2) * FT),
     size: Math.max(w, h) * FT,
     setPhase,

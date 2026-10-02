@@ -4,6 +4,8 @@ import { COLORS, detectorColor, phaseColor } from '../palette.js';
 import { pt, phaseMovements, phaseCrossings, movementPath, freeRightPath } from '../lib/geometry.js';
 import { legTurns, legLabel, normBearing } from '../lib/model.js';
 import { bearingToTravel } from '../lib/gtss.js';
+import { viewCone } from '../lib/cameras.js';
+import { ConflictMarker, ConflictPaths } from './ConflictMarkers.jsx';
 
 const FONT = 'Inter, system-ui, -apple-system, Segoe UI, sans-serif';
 
@@ -139,7 +141,7 @@ function SpeedSign({ sign }) {
   );
 }
 
-export default function IntersectionCanvas({ design, geom, selection, phase, onSelect, onBearing, onDragEnd, svgRef }) {
+export default function IntersectionCanvas({ design, geom, selection, phase, conflicts, onSelect, onBearing, onDragEnd, svgRef }) {
   const [frozen, setFrozen] = useState(null);
   const [view, setView] = useState(null); // null: fit the whole design
   const dragging = useRef(null);
@@ -387,6 +389,28 @@ export default function IntersectionCanvas({ design, geom, selection, phase, onS
             <path key={`c${i}`} d={c.d} fill="none" stroke={c.color} strokeWidth={2.2 * k} strokeDasharray={`${1.5 * k} ${2.5 * k}`} strokeLinecap="round"
               markerStart={`url(#${markers.get(c.color)})`} markerEnd={`url(#${markers.get(c.color)})`} />
           ))}
+        </g>
+      )}
+
+      {/* Camera pins from the 3D view: where each stands and what it sees */}
+      {(design.cameras || []).map((pin) => {
+        const cone = viewCone(pin, 55);
+        return (
+          <g key={pin.id} pointerEvents="none" data-3d="skip">
+            <polygon points={cone.map(pt).join(' ')} fill={COLORS.select} fillOpacity="0.16" stroke={COLORS.select} strokeWidth="0.6" strokeDasharray="2 1.5" />
+            <circle cx={pin.x} cy={pin.y} r="2.6" fill={COLORS.select} stroke="#fff" strokeWidth="0.8" />
+            <text x={pin.x} y={pin.y - 4.5} textAnchor="middle" fontSize="4.6" fontWeight="700" fill={COLORS.select}
+              stroke="#fff" strokeWidth="1.2" paintOrder="stroke">{pin.name}</text>
+          </g>
+        );
+      })}
+
+      {/* Conflict points for the chosen scope */}
+      {conflicts && (
+        <g pointerEvents="none" data-3d="skip">
+          <rect x={box.minX - 500} y={box.minY - 500} width={w + 1000} height={box.maxY - box.minY + 1000} fill="#ffffff" opacity="0.25" />
+          <ConflictPaths result={conflicts} width={0.9 * k} opacity={0.85} />
+          {conflicts.points.map((p, i) => <ConflictMarker key={i} type={p.type} x={p.x} y={p.y} r={2.4 * k} />)}
         </g>
       )}
 
