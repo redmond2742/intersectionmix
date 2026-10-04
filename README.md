@@ -63,6 +63,19 @@ Everything runs in the browser. There is no server and no account.
       red when the two are under 4 s apart.
     - Compare no signals with a default dual-ring signal cycle, and play, scrub
       and orbit through the cycle.
+- **Signal playback (advanced).** Off until switched on under ⚙ Settings.
+  - Load high-resolution controller data: the Indiana event log, one CSV per
+    controller-hour (`9/17/2026 08:00:19.8, 8, 4`), several at once or a `.zip`.
+  - Each lane's stop bar and signal face shows green, yellow or red; a
+    protected-permissive left flashes yellow on its through green; crosswalks
+    show walk and flashing don't walk; detectors light up when occupied,
+    matched to the plan by channel.
+  - Play at 1×, 2×, 4×, 8×, 16× or 32×, skip ±30 s or to the next change, or
+    scrub. A strip under the slider shows two minutes of phases, pedestrian
+    signals and detectors around the playhead.
+  - Codes used: 1, 8–12 (phase), 21–23 (pedestrian), 61–65 (overlap),
+    81/82 (detector), 89/90 (pushbutton), 131 (pattern).
+  - The data stays in the tab and is never saved or uploaded.
 - **Undo and redo.** ⌘/Ctrl-Z undoes and ⇧⌘Z (or Ctrl-Y) redoes. Delete
   removes the selected lane or detector.
 
@@ -100,12 +113,14 @@ The stack is React and Vite, written in plain JavaScript.
   | `model.js` | Design model, templates, NEMA auto-assign, checks |
   | `gtssMapping.js` | Import and export |
   | `geometry.js` | Plan-view layout |
-  | `store.js` | Autosave and share links |
+  | `store.js` | Autosave, share links and settings |
   | `gtss.js` | CSV handling |
   | `exports.js` | Design file and detector list |
   | `conflicts.js` | Conflict points |
   | `cameras.js` | Camera pins for the 3D view |
   | `conflictTime.js` | Conflicts in time: phase schedule, travel times, gaps |
+  | `hires.js` | High-resolution data: parsing, timeline, state at a moment |
+  | `playbackClock.js` | The playback snapshot store |
   | `zipReader.js`, `zipWriter.js` | Zip handling, from Traffic Signal Kit |
 
 - The 3D view lives in `src/three/`:

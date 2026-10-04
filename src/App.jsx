@@ -7,6 +7,8 @@ import { ConflictMarker } from './components/ConflictMarkers.jsx';
 import { conflictPoints, CONFLICT_TYPES } from './lib/conflicts.js';
 import SignalPicker from './components/SignalPicker.jsx';
 import ExportMenu from './components/ExportMenu.jsx';
+import SettingsMenu from './components/SettingsMenu.jsx';
+import { createPlaybackStore } from './lib/playbackClock.js';
 import { useHistory } from './useHistory.js';
 import { computeGeometry } from './lib/geometry.js';
 import {
@@ -15,7 +17,9 @@ import {
 import { listSignals, designFromGtss, gtssFromDesign } from './lib/gtssMapping.js';
 import { readZipText } from './lib/zipReader.js';
 import { zipBlob } from './lib/zipWriter.js';
-import { saveDesign, loadDesign, saveFeed, loadFeed, encodeShare, decodeShare, SHARE_PREFIX } from './lib/store.js';
+import {
+  saveDesign, loadDesign, saveFeed, loadFeed, encodeShare, decodeShare, SHARE_PREFIX, loadSettings, saveSettings,
+} from './lib/store.js';
 import {
   downloadBlob, slugify, svgMarkup, svgToPngBlob, svgToCanvas, phaseSheetMarkup, addConflictLegend,
 } from './lib/download.js';
@@ -24,6 +28,8 @@ import { DETECTOR_COLORS, COLORS } from './palette.js';
 
 // Three.js and the 3D scene load only when the 3D view is opened.
 const View3D = lazy(() => import('./three/View3D.jsx'));
+// Signal playback is an advanced setting; its player loads only when switched on.
+const Playback = lazy(() => import('./components/Playback.jsx'));
 
 function isTyping(target) {
   return target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable);
@@ -40,6 +46,9 @@ export default function App() {
   const [show3d, setShow3d] = useState(false);
   const [toast, setToast] = useState(null);
   const [canvasKey, setCanvasKey] = useState(0); // remounts the canvas, refitting it, on a new design
+  const [settings, setSettings] = useState(() => loadSettings());
+  const [playbackLoaded, setPlaybackLoaded] = useState(false);
+  const playbackStore = useMemo(() => createPlaybackStore(), []);
   const svgRef = useRef(null);
   const phasesRef = useRef(null);
   const fileRef = useRef(null);
@@ -80,6 +89,13 @@ export default function App() {
     }
     return () => clearTimeout(timer);
   }, [design]);
+
+  const changeSettings = (next) => {
+    setSettings(next);
+    saveSettings(next);
+    if (!next.playback) setPlaybackLoaded(false);
+  };
+  const playbackOn = settings.playback && playbackLoaded;
 
   const select = useCallback((next) => {
     setSelection(next);
@@ -356,6 +372,7 @@ export default function App() {
           <ExportMenu items={exportItems} />
           <button type="button" className="btn-3d" onClick={() => { setSelection(null); setShow3d(true); }}
             title="Open the intersection in 3D">3D view</button>
+          <SettingsMenu settings={settings} onChange={changeSettings} />
           <span className="sep" />
           <button type="button" onClick={undo} disabled={!history.canUndo} title="Undo (⌘Z)" aria-label="Undo">↶</button>
           <button type="button" onClick={redo} disabled={!history.canRedo} title="Redo (⇧⌘Z)" aria-label="Redo">↷</button>
@@ -376,9 +393,15 @@ export default function App() {
       )}
 
       <main className="workspace">
-        <section className="canvas-wrap panel">
+        <section className={`canvas-wrap panel${settings.playback ? ' with-playback' : ''}`}>
           <IntersectionCanvas key={canvasKey} design={design} geom={geom} selection={selection} phase={phase} conflicts={conflicts}
+            playback={playbackOn ? playbackStore : null}
             onSelect={select} onBearing={onBearing} onDragEnd={commit} svgRef={svgRef} />
+          {settings.playback && (
+            <Suspense fallback={<section className="playback empty"><span className="muted">Loading playback…</span></section>}>
+              <Playback design={design} store={playbackStore} say={say} onLoaded={setPlaybackLoaded} />
+            </Suspense>
+          )}
           <div className="legend" aria-label="Legend">
             <label className="check conflict-toggle">
               <input type="checkbox" checked={showConflicts} onChange={(e) => setShowConflicts(e.target.checked)} />
@@ -404,7 +427,7 @@ export default function App() {
               </>
             )}
           </div>
-          {phase && (
+          {phase && !playbackOn && (
             <button type="button" className="phase-flag" onClick={() => setPhase(null)}>Showing phase {phase} ×</button>
           )}
 
@@ -487,6 +510,15 @@ export default function App() {
           reaches it, linked red when they are under 4 seconds apart. With no signals most conflicts are live; with signal
           timing (a default dual-ring cycle) the signal lifts them apart, leaving only what it permits. Play, pause or scrub
           the cycle and orbit around it.
+        </p>
+        <h3>Signal playback (advanced)</h3>
+        <p>
+          Switch on ⚙ › Signal playback to replay high-resolution controller data (the Indiana event log, one CSV per
+          controller-hour, or a .zip of them) on the plan. Each lane&apos;s stop bar and signal face shows green, yellow or
+          red, a protected-permissive left flashes yellow on its through green, crosswalks show walk and flashing
+          don&apos;t walk, and detectors light up when occupied, matched by channel. Play at 1× to 32×, skip 30 seconds or
+          to the next change, or scrub; the strip under the slider shows the two minutes around the playhead. Space plays
+          and pauses, ←/→ step a second, Shift-←/→ jump between changes. The data stays in the tab and is not saved.
         </p>
         <h3>Keys</h3>
         <p>⌘/Ctrl-Z undo · ⇧⌘Z or Ctrl-Y redo · Delete removes the selected lane or detector · Esc clears the selection · Shift while dragging a handle rotates by 1°.</p>

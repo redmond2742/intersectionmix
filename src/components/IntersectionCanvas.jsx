@@ -6,6 +6,7 @@ import { legTurns, legLabel, normBearing } from '../lib/model.js';
 import { bearingToTravel } from '../lib/gtss.js';
 import { viewCone } from '../lib/cameras.js';
 import { ConflictMarker, ConflictPaths } from './ConflictMarkers.jsx';
+import PlaybackOverlay from './PlaybackOverlay.jsx';
 
 const FONT = 'Inter, system-ui, -apple-system, Segoe UI, sans-serif';
 
@@ -141,7 +142,9 @@ function SpeedSign({ sign }) {
   );
 }
 
-export default function IntersectionCanvas({ design, geom, selection, phase, conflicts, onSelect, onBearing, onDragEnd, svgRef }) {
+export default function IntersectionCanvas({
+  design, geom, selection, phase, conflicts, playback, onSelect, onBearing, onDragEnd, svgRef,
+}) {
   const [frozen, setFrozen] = useState(null);
   const [view, setView] = useState(null); // null: fit the whole design
   const dragging = useRef(null);
@@ -153,7 +156,9 @@ export default function IntersectionCanvas({ design, geom, selection, phase, con
   const selectedLeg = selection ? geom.byId.get(selection.legId) : null;
 
   // What to draw over the plan: a selected phase, or the selected leg's movements.
+  // During signal playback the signals say what moves, so this steps aside.
   const overlay = useMemo(() => {
+    if (playback) return null;
     if (phase) {
       return {
         moves: phaseMovements(design, geom, phase, { perLane: true }).map((m) => ({ ...m, color: phaseColor(phase) })),
@@ -176,7 +181,7 @@ export default function IntersectionCanvas({ design, geom, selection, phase, con
       }
     }
     return { moves, crossings: [] };
-  }, [design, geom, phase, selectedLeg, selection]);
+  }, [design, geom, phase, selectedLeg, selection, playback]);
 
   const slips = geom.legs.filter((g) => g.slip).map((g) => ({ g, slip: g.slip }));
 
@@ -413,6 +418,9 @@ export default function IntersectionCanvas({ design, geom, selection, phase, con
           {conflicts.points.map((p, i) => <ConflictMarker key={i} type={p.type} x={p.x} y={p.y} r={2.4 * k} />)}
         </g>
       )}
+
+      {/* Signal playback: what every signal and detector shows at the playhead */}
+      {playback && <PlaybackOverlay design={design} geom={geom} store={playback} k={k} />}
 
       {/* Detector channels */}
       {geom.legs.map((g) => g.detectors.map((item) => (

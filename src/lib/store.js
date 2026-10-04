@@ -18,6 +18,10 @@ import { normalizeDesign } from './model.js';
 export const DESIGN_KEY = 'intersectionMix:design:v1';
 export const FEED_KEY = 'intersectionMix:feed:v1';
 export const SHARE_PREFIX = '#d=';
+export const SETTINGS_KEY = 'intersectionMix:settings:v1';
+
+/** App settings. Advanced features are off until switched on here. */
+export const DEFAULT_SETTINGS = { playback: false };
 
 export function defaultStorage() {
   try {
@@ -74,6 +78,20 @@ export function loadFeed(storage = defaultStorage()) {
   } catch {
     return null;
   }
+}
+
+export function loadSettings(storage = defaultStorage()) {
+  const raw = safeGet(storage, SETTINGS_KEY);
+  try {
+    const saved = raw ? JSON.parse(raw) : {};
+    return { ...DEFAULT_SETTINGS, ...(saved && typeof saved === 'object' ? saved : {}) };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+export function saveSettings(settings, storage = defaultStorage()) {
+  return safeSet(storage, SETTINGS_KEY, JSON.stringify(settings));
 }
 
 function toBase64Url(bytes) {
