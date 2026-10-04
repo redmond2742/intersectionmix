@@ -571,6 +571,40 @@ table.moves select { width: 100%; }
   .view3d-bar { flex-wrap: wrap; }
 }
 
+/* Conflicts in time */
+.st-panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 300px;
+  max-height: calc(100% - 64px);
+  overflow: auto;
+  padding: 10px 12px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.95);
+  color: #1f2328;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color-scheme: light;
+}
+.st-panel button { background: #fff; color: #1f2328; border: 1px solid #d5d8d2; }
+.st-panel .pin-row button { min-width: 38px; }
+.segmented.light { border-color: #d5d8d2; align-self: flex-start; }
+.segmented.light button { background: #fff; color: #1f2328; border: 0; }
+.segmented.light button.on { background: #1f2328; color: #fff; }
+.st-live { color: #e03131; }
+.st-counts { display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline; font-size: 14px; }
+.st-legend { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; }
+.st-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.st-legend i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+.st-legend i.ring { background: #fff; border: 2px solid #c92a2a; width: 9px; height: 9px; }
+@media (max-width: 700px) {
+  .st-panel { top: auto; bottom: 12px; left: 12px; right: 12px; width: auto; max-height: 42%; }
+}
+
 /* Modal and toast */
 .modal-backdrop {
   position: fixed;

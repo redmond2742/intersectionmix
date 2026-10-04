@@ -395,10 +395,18 @@ export function buildScene({ design, geom, planCanvas, anisotropy = 8 }) {
     root.add(raised);
   }
 
-  const heads = buildSignals(design, geom, root, materials);
-  speedSigns(geom, root, materials);
-  traffic(geom, root, materials);
-  trees(geom, root, materials);
+  // Named layers, so a view can set them aside (conflicts in time hides them).
+  const layer = (name) => {
+    const group = new THREE.Group();
+    group.name = name;
+    root.add(group);
+    return group;
+  };
+  const layers = { signals: layer('Signals'), signs: layer('Signs'), traffic: layer('Traffic'), trees: layer('Trees') };
+  const heads = buildSignals(design, geom, layers.signals, materials);
+  speedSigns(geom, layers.signs, materials);
+  traffic(geom, layers.traffic, materials);
+  trees(geom, layers.trees, materials);
 
   const setPhase = (phase) => {
     for (const head of heads) {
@@ -413,6 +421,7 @@ export function buildScene({ design, geom, planCanvas, anisotropy = 8 }) {
     root,
     // What a camera pin can stand on: the ground and the raised surfaces, not cars or trees.
     surfaces: [ground, land, sidewalks, raised].filter(Boolean),
+    layers,
     center: new THREE.Vector3(((b.minX + b.maxX) / 2) * FT, 0, ((b.minY + b.maxY) / 2) * FT),
     size: Math.max(w, h) * FT,
     setPhase,

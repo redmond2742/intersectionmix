@@ -32,7 +32,7 @@ Everything runs in the browser. There is no server and no account.
     Other signals, `basic_timings.txt`, `preempt.txt` and unknown columns pass
     through byte for byte.
   - Switching signals keeps your edits to the previous one.
-- **Saving.** Designs autosave in the browser. **Copy link** packs the design
+- **Saving.** Designs autosave in the browser. **Export ▸ Copy share link** packs the design
   into the URL fragment. The fragment is never sent to a server.
 - **Conflict points.** A checkbox under the plan marks diverging, merging, crossing and
   pedestrian conflicts for every movement, in the FHWA style. A plain four-leg is the textbook
@@ -52,10 +52,17 @@ Everything runs in the browser. There is no server and no account.
   - Mast-arm signals hang over every approach lane, and their lamps show a
     chosen phase. The scene also has speed limit signs, street-name blades,
     queued cars and street trees.
-  - You can orbit, pan and zoom, and switch between perspective and
-    isometric.
+  - You can orbit, pan and zoom, and switch between isometric (the
+    default) and perspective.
   - Export a PNG, or a glTF binary (`.glb`, in metres) to keep modelling in
     Blender, SketchUp and similar tools.
+  - **Conflicts in time** stands the conflict points up in space and time: the
+    plan on the ground, seconds going up.
+    - Each movement is a tube climbing as it crosses the intersection.
+    - Each conflict point appears at the moment each movement reaches it, linked
+      red when the two are under 4 s apart.
+    - Compare no signals with a default dual-ring signal cycle, and play, scrub
+      and orbit through the cycle.
 - **Undo and redo.** ⌘/Ctrl-Z undoes and ⇧⌘Z (or Ctrl-Y) redoes. Delete
   removes the selected lane or detector.
 
@@ -98,6 +105,7 @@ The stack is React and Vite, written in plain JavaScript.
   | `exports.js` | Design file and detector list |
   | `conflicts.js` | Conflict points |
   | `cameras.js` | Camera pins for the 3D view |
+  | `conflictTime.js` | Conflicts in time: phase schedule, travel times, gaps |
   | `zipReader.js`, `zipWriter.js` | Zip handling, from Traffic Signal Kit |
 
 - The 3D view lives in `src/three/`:
@@ -106,6 +114,8 @@ The stack is React and Vite, written in plain JavaScript.
   | --- | --- |
   | `areas.js` | Plan areas for the 3D build: sidewalk minus roadway, raised islands (framework-free) |
   | `buildScene.js` | The three.js scene |
+  | `pins.js` | Camera pin markers and cameras |
+  | `spaceTime.js` | Conflicts in time, in 3D |
   | `View3D.jsx` | The viewer and its exports |
 
 - Edits run as model operations on immer drafts (`src/useHistory.js`), which

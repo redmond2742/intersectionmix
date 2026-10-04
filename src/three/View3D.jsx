@@ -4,6 +4,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { buildScene, FT as FT_M } from './buildScene.js';
 import { applyPinCamera, fitAspect, syncMarkers } from './pins.js';
+import { buildSpaceTime, disposeGroup } from './spaceTime.js';
+import { spaceTime, LIVE_GAP } from '../lib/conflictTime.js';
 import { usedPhases, isOverlap } from '../lib/model.js';
 import {
   makePin, aimAt, nextPinName, pinCaption, withHeight, CAMERA_PRESETS, OUTPUT_SIZES, PIN_ASPECT,
@@ -11,7 +13,8 @@ import {
 import { bearingToCompass } from '../lib/gtss.js';
 import { downloadBlob, slugify, planCanvas } from '../lib/download.js';
 
-
+/** The isometric camera looks in from this side, the south-east. */
+const ISO = new THREE.Vector3(1, 1.05, 1).normalize();
 
 /**
  * The 3D view: a full-screen scene of the current design, opened only from
@@ -32,7 +35,7 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
   const ctx = useRef({});
   const phases = usedPhases(design);
   const [status, setStatus] = useState('Building the 3D scene…');
-  const [mode, setMode] = useState('perspective');
+  const [mode, setMode] = useState('isometric');
   const [phase, setPhase] = useState(initialPhase && phases.includes(initialPhase) ? initialPhase : phases[0] || '');
   const [ready, setReady] = useState(false);
   const pins = design.cameras || [];
@@ -44,6 +47,13 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
   const [newHeight, setNewHeight] = useState(5.5);
   const [outputSize, setOutputSize] = useState('fhd');
   const [caption, setCaption] = useState(true);
+  // Conflicts in time
+  const [stOn, setStOn] = useState(false);
+  const [stMode, setStMode] = useState('signal');
+  const [stScale, setStScale] = useState(1.2); // metres of height per second
+  const [stPlaying, setStPlaying] = useState(true);
+  const [stTime, setStTime] = useState(0);
+  const [stInfo, setStInfo] = useState(null);
   const selected = pins.find((p) => p.id === selectedId) || null;
 
   useEffect(() => {
@@ -68,7 +78,8 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
     scene.add(hemi, sun, sun.target);
     const perspective = new THREE.PerspectiveCamera(40, 1, 0.3, 4000);
     const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, -2000, 4000);
-    ctx.current = { scene, perspective, ortho, camera: perspective, sun };
+    ctx.current = { scene, perspective, ortho, camera: ortho, sun };
+    if (import.meta.env.DEV) window.__im3d = ctx; // for inspecting the scene from the console while developing
 
     const resize = () => {
       if (!renderer) return;
@@ -95,7 +106,8 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
       renderer.shadowMap.type = THREE.PCFShadowMap;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      const controls = new OrbitControls(perspective, renderer.domElement);
+      // Opens in isometric; the mode effect takes over from here.
+      const controls = new OrbitControls(ortho, renderer.domElement);
       controls.enableDamping = true;
       controls.maxPolarAngle = Math.PI * 0.49;
       Object.assign(ctx.current, { renderer, controls });
@@ -118,6 +130,7 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
       cam.updateProjectionMatrix();
 
       perspective.position.set(center.x - extent * 0.32, extent * 0.5, center.z + extent * 0.62);
+      ortho.position.copy(center).add(ISO.clone().multiplyScalar(extent * 1.5));
       controls.target.copy(center);
       controls.maxDistance = extent * 3;
       controls.minDistance = 4;
@@ -137,8 +150,8 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
       el.appendChild(view);
       resize();
       controls.update();
-      renderer.compile(scene, perspective);
-      renderer.render(scene, perspective);
+      renderer.compile(scene, ctx.current.camera);
+      renderer.render(scene, ctx.current.camera);
       observer = new ResizeObserver(resize);
       observer.observe(el);
       // Picking a spot on the ground, for placing and aiming pins. A drag is
@@ -184,10 +197,23 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
         renderer.setViewport(0, 0, size.x, size.y);
         c.markers.visible = true;
       };
+      let last = performance.now();
       const loop = () => {
         frame = requestAnimationFrame(loop);
         const c = ctx.current;
+        const now = performance.now();
+        const dt = Math.min(0.1, (now - last) / 1000);
+        last = now;
         c.controls.update();
+        // Conflicts in time: sweep the "now" plane up through the cycle.
+        if (c.st) {
+          if (c.st.playing) c.st.t = (c.st.t + dt * c.st.rate) % c.st.span;
+          c.st.update(c.st.t);
+          if (now - (c.st.reported || 0) > 120) {
+            c.st.reported = now;
+            c.onStTime(c.st.t);
+          }
+        }
         renderer.getSize(size);
         const pin = c.activePin;
         if (pin && c.lookThrough) {
@@ -257,7 +283,7 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
     const { extent } = c.home;
     c.controls.dispose();
     if (mode === 'isometric') {
-      c.ortho.position.copy(target).add(new THREE.Vector3(1, 1.05, 1).normalize().multiplyScalar(extent * 1.5));
+      c.ortho.position.copy(target).add(ISO.clone().multiplyScalar(extent * 1.5));
       c.ortho.zoom = 1;
       c.ortho.updateProjectionMatrix();
       c.camera = c.ortho;
@@ -393,6 +419,71 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, pinMode, lookThrough]);
 
+  /* ---------------- Conflicts in time ---------------- */
+
+  useEffect(() => {
+    ctx.current.onStTime = setStTime;
+  }, []);
+
+  useEffect(() => {
+    const c = ctx.current;
+    if (!ready || !c.built) return;
+    const previous = c.st;
+    if (previous) {
+      c.scene.remove(previous.group);
+      disposeGroup(previous.group);
+      c.st = null;
+    }
+    const layers = Object.values(c.built.layers || {});
+    if (!stOn) {
+      layers.forEach((layer) => { layer.visible = true; });
+      if (previous) resetView();
+      setStInfo(null);
+      return;
+    }
+    const data = spaceTime(design, geom, { mode: stMode });
+    const built = buildSpaceTime(data, geom, { scale: stScale });
+    c.scene.add(built.group);
+    layers.forEach((layer) => { layer.visible = false; });
+    c.st = {
+      ...built,
+      span: data.span,
+      t: previous ? Math.min(previous.t, data.span) : 0,
+      rate: Math.max(1, data.span / 24), // a cycle in about 24 seconds
+      playing: stPlaying,
+    };
+    setStInfo({ span: data.span, cycle: data.schedule.cycle, counts: data.counts, conflicts: data.conflicts.length });
+    if (!previous) {
+      // Stand back far enough to see the whole column of time.
+      const { center, extent } = c.home;
+      const tall = built.height;
+      const e = Math.max(extent, tall);
+      c.controls.target.set(center.x, tall * 0.42, center.z);
+      if (c.camera === c.perspective) {
+        // From the south-east, so the time axis (off the south-west corner) stands to one side.
+        c.perspective.position.set(center.x + e * 0.62, tall * 0.55 + e * 0.32, center.z + e * 0.92);
+      } else {
+        // Isometric: zoom out until the whole column fits.
+        c.ortho.position.copy(c.controls.target).add(ISO.clone().multiplyScalar(e * 1.5));
+        c.ortho.zoom = Math.min(1, (c.orthoHalf || 50) / (e * 0.62));
+        c.ortho.updateProjectionMatrix();
+      }
+      c.controls.maxDistance = e * 4;
+    }
+  }, [stOn, stMode, stScale, ready]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (ctx.current.st) ctx.current.st.playing = stPlaying;
+  }, [stPlaying]);
+
+  const scrubTo = (t) => {
+    const c = ctx.current;
+    if (!c.st) return;
+    c.st.t = t;
+    setStPlaying(false);
+    setStTime(t);
+  };
+
   const resetView = () => {
     const c = ctx.current;
     if (!c.home) return;
@@ -401,7 +492,7 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
     if (c.camera === c.perspective) {
       c.perspective.position.set(center.x - extent * 0.32, extent * 0.5, center.z + extent * 0.62);
     } else {
-      c.ortho.position.copy(center).add(new THREE.Vector3(1, 1.05, 1).normalize().multiplyScalar(extent * 1.5));
+      c.ortho.position.copy(center).add(ISO.clone().multiplyScalar(extent * 1.5));
       c.ortho.zoom = 1;
       c.ortho.updateProjectionMatrix();
     }
@@ -446,6 +537,8 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
         </label>
         <button type="button" className={panelOpen ? 'on' : ''} onClick={() => setPanelOpen((v) => !v)} disabled={!ready}
           aria-pressed={panelOpen}>Camera pins{pins.length ? ` (${pins.length})` : ''}</button>
+        <button type="button" className={stOn ? 'on' : ''} onClick={() => setStOn((v) => !v)} disabled={!ready}
+          aria-pressed={stOn} title="Conflict points in space and time">Conflicts in time</button>
         <span className="view3d-spacer" />
         <button type="button" onClick={resetView} disabled={!ready}>Reset view</button>
         <button type="button" onClick={snapshot} disabled={!ready}>PNG</button>
@@ -471,6 +564,55 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
             onRemove={removePin}
             onClose={() => setPanelOpen(false)}
           />
+        )}
+
+        {ready && stOn && stInfo && (
+          <div className="st-panel" onPointerDown={(e) => e.stopPropagation()}>
+            <div className="pin-head">
+              <strong>Conflicts in time</strong>
+              <button type="button" className="pin-x" aria-label="Turn off conflicts in time" onClick={() => setStOn(false)}>×</button>
+            </div>
+            <p className="pin-note">
+              The plan is the ground; height is time. Each tube is a movement crossing the intersection. Every conflict
+              point shows the moment each movement reaches it, joined by a link: <b className="st-live">red</b> when they
+              are under {LIVE_GAP} s apart, grey when time keeps them apart.
+            </p>
+            <div className="segmented light" role="group" aria-label="Timing">
+              <button type="button" className={stMode === 'none' ? 'on' : ''} onClick={() => setStMode('none')}>No signals</button>
+              <button type="button" className={stMode === 'signal' ? 'on' : ''} onClick={() => setStMode('signal')}>Signal timing</button>
+            </div>
+            <div className="st-counts">
+              <span><b className="st-live">{stInfo.counts.live}</b> live</span>
+              <span><b>{stInfo.counts.separated}</b> separated by time</span>
+              <span className="pin-meta">of {stInfo.conflicts} conflict points</span>
+            </div>
+            {stMode === 'signal' && (
+              <p className="pin-note">
+                Default dual-ring cycle of {Math.round(stInfo.cycle)} s: lefts 12 s, throughs 28 s, 4 s change. Coloured
+                bands on the time axis are each phase&apos;s green.
+              </p>
+            )}
+            <div className="pin-section">
+              <span className="pin-label">Time {stTime.toFixed(1)} s</span>
+              <div className="pin-row">
+                <button type="button" onClick={() => setStPlaying((v) => !v)} aria-label={stPlaying ? 'Pause' : 'Play'}>
+                  {stPlaying ? '❚❚' : '▶'}
+                </button>
+                <input type="range" min="0" max={stInfo.span} step="0.1" value={Math.min(stTime, stInfo.span)}
+                  onChange={(e) => scrubTo(Number(e.target.value))} aria-label="Time" />
+              </div>
+            </div>
+            <div className="pin-section">
+              <span className="pin-label">Height per second {stScale.toFixed(1)} m</span>
+              <input type="range" min="0.3" max="3" step="0.1" value={stScale} onChange={(e) => setStScale(Number(e.target.value))} aria-label="Height per second" />
+            </div>
+            <div className="st-legend">
+              <span><i style={{ background: '#c92a2a' }} />Diverging</span>
+              <span><i style={{ background: '#e8590c' }} />Merging</span>
+              <span><i className="ring" />Crossing</span>
+              <span><i style={{ background: '#1971c2' }} />Pedestrian</span>
+            </div>
+          </div>
         )}
 
         {ready && selected && !lookThrough && (

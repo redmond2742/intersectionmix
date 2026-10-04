@@ -298,6 +298,13 @@ export default function App() {
       onSelect: () => exportGtss(true),
     },
     { separator: true },
+    {
+      id: 'link',
+      label: 'Copy share link',
+      detail: 'The whole design packed into the URL; nothing is uploaded',
+      onSelect: copyLink,
+    },
+    { separator: true },
     { id: 'png', label: 'Plan drawing (.png)', detail: '2000 px wide, as framed on screen', onSelect: () => exportImage('png') },
     { id: 'svg', label: 'Plan drawing (.svg)', detail: 'Vector, for reports and CAD', onSelect: () => exportImage('svg') },
     { id: 'phases-png', label: 'Phase diagrams (.png)', detail: 'Ring-and-barrier sheet', onSelect: () => exportPhaseSheet('png') },
@@ -347,7 +354,6 @@ export default function App() {
           <button type="button" onClick={() => fileRef.current.click()}
             title="Open a GTSS feed (.zip or .txt files) or an Intersection Mix design (.json)">Open…</button>
           <ExportMenu items={exportItems} />
-          <button type="button" onClick={copyLink}>Copy link</button>
           <button type="button" className="btn-3d" onClick={() => { setSelection(null); setShow3d(true); }}
             title="Open the intersection in 3D">3D view</button>
           <span className="sep" />
@@ -471,8 +477,16 @@ export default function App() {
         <p>
           The 3D view button opens the design in 3D. The road surface is the plan itself, and the sidewalks and islands are
           raised to curb height. Mast-arm signals hang over every approach lane, and their lamps show whichever phase you
-          choose. Orbit, pan and zoom, switch to isometric, save a PNG, or export a glTF model (.glb, in metres) to carry
+          choose. Orbit, pan and zoom, switch between isometric (the default) and perspective, save a PNG, or export a glTF model (.glb, in metres) to carry
           on modelling in Blender, SketchUp or similar tools.
+        </p>
+        <h3>Conflicts in time</h3>
+        <p>
+          In the 3D view, Conflicts in time stands the conflict points up in time. The plan stays on the ground and height
+          is seconds. Each movement is a tube climbing as it crosses, and each conflict point shows the moment each movement
+          reaches it, linked red when they are under 4 seconds apart. With no signals most conflicts are live; with signal
+          timing (a default dual-ring cycle) the signal lifts them apart, leaving only what it permits. Play, pause or scrub
+          the cycle and orbit around it.
         </p>
         <h3>Keys</h3>
         <p>⌘/Ctrl-Z undo · ⇧⌘Z or Ctrl-Y redo · Delete removes the selected lane or detector · Esc clears the selection · Shift while dragging a handle rotates by 1°.</p>
