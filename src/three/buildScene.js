@@ -265,9 +265,9 @@ function speedSigns(geom, root, materials) {
 
 const CAR_COLORS = ['#e03131', '#1c7ed6', '#f1f3f5', '#343a40', '#f59f00', '#5c7cfa', '#2b8a3e', '#868e96'];
 
-function car(color, materials) {
+function car(color, materials, reusePaint) {
   const group = new THREE.Group();
-  const paint = new THREE.MeshStandardMaterial({ color, metalness: 0.3, roughness: 0.45 });
+  const paint = reusePaint || new THREE.MeshStandardMaterial({ color, metalness: 0.3, roughness: 0.45 });
   const body = new THREE.Mesh(new THREE.BoxGeometry(6 * FT, 2.3 * FT, 14.5 * FT), paint);
   body.position.y = 2 * FT;
   const cabin = new THREE.Mesh(new THREE.BoxGeometry(5.3 * FT, 1.9 * FT, 7.4 * FT), materials.glass);
@@ -306,6 +306,87 @@ function traffic(geom, root, materials) {
       root.add(vehicle);
     });
   }
+}
+
+/**
+ * Vehicles driven by detector data: a pool of cars that are moved and
+ * shown as playback asks for them, and hidden when it does not. Vehicles
+ * are placed with the same compression the plan draws detectors with, so a
+ * car always sits on the loop that is calling.
+ */
+function vehiclePool(geom, root, materials) {
+  const pool = [];
+  const used = new Map(); // vehicle id -> car, so each keeps its colour and place
+  const yFor = (g, dist) => (dist >= 0 ? g.mapY(dist) : g.S + dist); // past the stop bar it carries on into the box
+  const take = (id) => {
+    const free = pool.find((item) => !item.busy);
+    if (free) {
+      free.busy = true;
+      free.paint.color.set(CAR_COLORS[hash(id) % CAR_COLORS.length]);
+      return free;
+    }
+    if (pool.length >= 120) return null;
+    const paint = new THREE.MeshStandardMaterial({ color: CAR_COLORS[hash(id) % CAR_COLORS.length], metalness: 0.3, roughness: 0.45 });
+    const item = { group: car('#ffffff', materials, paint), paint, busy: true };
+    root.add(item.group);
+    pool.push(item);
+    return item;
+  };
+  return (vehicles) => {
+    for (const item of pool) item.busy = false;
+    const next = new Map();
+    for (const v of vehicles) {
+      const g = geom.byId.get(v.legId);
+      const lane = g && g.cs.inbound.find((l) => l.lane.id === v.laneId);
+      if (!lane) continue;
+      const item = used.get(v.id) || take(v.id);
+      if (!item) continue;
+      item.busy = true;
+      next.set(v.id, item);
+      item.group.visible = true;
+      item.group.position.copy(at(g.world(yFor(g, v.dist), lane.cx)));
+      item.group.rotation.y = facing(g.d);
+    }
+    used.clear();
+    next.forEach((item, id) => used.set(id, item));
+    for (const item of pool) if (!item.busy) item.group.visible = false;
+  };
+}
+
+/**
+ * A wash of light over a whole approach while a preempt or priority request
+ * is running on it, from the stop bar out to the end of the leg.
+ */
+function priorityWash(geom, root) {
+  const washes = new Map();
+  for (const g of geom.legs) {
+    if (!g.cs.inbound.length) continue;
+    const width = g.cs.curbIn - g.cs.inbound[0].x0;
+    const length = g.L - g.S;
+    if (width <= 0 || length <= 0) continue;
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(width * FT, length * FT),
+      new THREE.MeshBasicMaterial({ color: '#e03131', transparent: true, opacity: 0.3, depthWrite: false }),
+    );
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.copy(at(g.world(g.S + length / 2, (g.cs.inbound[0].x0 + g.cs.curbIn) / 2), 0.12));
+    mesh.rotation.z = -facing(g.u);
+    mesh.visible = false;
+    mesh.name = `Priority ${g.id}`;
+    root.add(mesh);
+    washes.set(g.id, mesh);
+  }
+  return (active, now = performance.now()) => {
+    const pulse = 0.18 + 0.22 * (0.5 + 0.5 * Math.sin(now / 260));
+    washes.forEach((mesh, legId) => {
+      const request = active[legId];
+      mesh.visible = !!request;
+      if (!request) return;
+      mesh.material.color.set(request.kind === 'preempt' ? '#e03131' : '#1c7ed6');
+      mesh.material.opacity = pulse;
+    });
+    return Object.keys(active).length > 0;
+  };
 }
 
 function trees(geom, root, materials) {
@@ -399,7 +480,10 @@ export function buildScene({ design, geom, planCanvas, anisotropy = 8, equipment
     root.add(group);
     return group;
   };
-  const layers = { signals: layer('Signals'), signs: layer('Signs'), traffic: layer('Traffic'), trees: layer('Trees') };
+  const layers = {
+    signals: layer('Signals'), signs: layer('Signs'), traffic: layer('Traffic'), trees: layer('Trees'),
+    vehicles: layer('Vehicles'), priority: layer('Priority'),
+  };
   if (equipment && design.its) {
     layers.equipment = layer('Equipment');
     buildEquipment(design, geom, layers.equipment);
@@ -407,6 +491,8 @@ export function buildScene({ design, geom, planCanvas, anisotropy = 8, equipment
   const heads = buildSignals(design, geom, layers.signals, materials);
   speedSigns(geom, layers.signs, materials);
   traffic(geom, layers.traffic, materials);
+  const setVehicles = vehiclePool(geom, layers.vehicles, materials);
+  const setPriority = priorityWash(geom, layers.priority);
   trees(geom, layers.trees, materials);
 
   const setPhase = (phase) => {
@@ -453,6 +539,8 @@ export function buildScene({ design, geom, planCanvas, anisotropy = 8, equipment
     size: Math.max(w, h) * FT,
     setPhase,
     setSignals,
+    setVehicles,
+    setPriority,
     describe: () => design.legs.map(legLabel).join(', '),
   };
 }

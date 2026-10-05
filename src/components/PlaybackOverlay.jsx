@@ -5,6 +5,7 @@ import { detectorColor } from '../palette.js';
 import { movementPath } from '../lib/geometry.js';
 import { legTurns, TURNS } from '../lib/model.js';
 import { movementSignal } from '../lib/hires.js';
+import { priorityApproaches } from '../lib/its.js';
 
 /** Lamp colours. "permissive" is the flashing yellow arrow: go, but yield. */
 export const LAMP = {
@@ -52,6 +53,7 @@ export default function PlaybackOverlay({ design, geom, store, k, byTechnology }
 
   if (!snap) return null;
   const legOf = new Map(geom.legs.map((g) => [g.id, g.leg]));
+  const priority = priorityApproaches(design, snap);
   const signal = (leg, turn) => movementSignal(design, leg, turn, snap);
   const going = paths
     .map((p) => ({ ...p, state: signal(legOf.get(p.legId), p.turn) }))
@@ -85,8 +87,20 @@ export default function PlaybackOverlay({ design, geom, store, k, byTechnology }
         const cw = leg.crosswalk;
         const ped = cw.enabled && cw.pedPhase ? snap.peds[String(cw.pedPhase)] : null;
         const pushed = cw.enabled && cw.pedPhase && snap.buttons.has(String(cw.pedPhase));
+        const request = priority[g.id];
         return (
           <g key={g.id} transform={g.matrix}>
+            {/* A preempt or priority request running on this approach */}
+            {request && g.cs.inbound.length > 0 && (
+              <>
+                <Rect x0={g.cs.inbound[0].x0} x1={g.cs.curbIn} y0={g.S} y1={g.L}
+                  fill={request.kind === 'preempt' ? '#e03131' : '#1c7ed6'} fillOpacity="0.3" className="pb-pulse" />
+                <text x={(g.cs.inbound[0].x0 + g.cs.curbIn) / 2} y={g.S + 26} textAnchor="middle" fontSize="9" fontWeight="800"
+                  fill="#fff" stroke="#1d2126" strokeWidth="2.4" paintOrder="stroke" transform={`rotate(180 ${(g.cs.inbound[0].x0 + g.cs.curbIn) / 2} ${g.S + 26})`}>
+                  {request.kind === 'preempt' ? `PREEMPT ${request.number}` : `PRIORITY ${request.number}`}
+                </text>
+              </>
+            )}
             {/* Crosswalk: walk, or flashing don't walk */}
             {(ped === 'walk' || ped === 'fdw') && (
               <Rect x0={cs.curbOut} x1={cs.curbIn} y0={g.cwStart} y1={g.cwEnd}

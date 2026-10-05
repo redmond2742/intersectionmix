@@ -24,6 +24,17 @@ const OVERLAP = { 61: 'green', 62: 'green', 63: 'yellow', 64: 'red', 65: 'red' }
 const DETECTOR = { 82: 'on', 81: 'off' };
 const BUTTON = { 90: 'on', 89: 'off' };
 const PATTERN = 131;
+/**
+ * Preemption, by preempt number: the call, then the controller's run through
+ * entry, track clearance, dwell and the exit interval. Nothing marks the end
+ * of the exit interval, so it is given EXIT_MS and then taken as over.
+ */
+const PREEMPT = {
+  101: 'warning', 102: 'call', 103: 'gate', 104: 'off', 105: 'entry', 106: 'track', 107: 'dwell', 111: 'exit',
+};
+/** Transit signal priority, by priority number: checked in until checked out. */
+const TSP = { 112: 'tsp', 115: 'off' };
+export const EXIT_MS = 15000;
 /** A silence this long (ms) in the log is a gap in the data, not a quiet spell. */
 export const GAP_MS = 5 * 60 * 1000;
 
@@ -130,7 +141,10 @@ function push(ch, t, s) {
  */
 export function buildTimeline(log) {
   const events = log.events || log;
-  const tl = { phases: {}, peds: {}, overlaps: {}, detectors: {}, buttons: {}, pattern: { t: [], s: [] }, changes: [], gaps: [] };
+  const tl = {
+    phases: {}, peds: {}, overlaps: {}, detectors: {}, buttons: {}, preempts: {}, tsp: {},
+    pattern: { t: [], s: [] }, changes: [], gaps: [],
+  };
   let last = null;
   for (const e of events) {
     if (last != null && e.t - last > GAP_MS) tl.gaps.push({ from: last, to: e.t });
@@ -141,6 +155,8 @@ export function buildTimeline(log) {
     else if (OVERLAP[e.code]) changed = push(channel(tl.overlaps, overlapLetter(e.param)), e.t, OVERLAP[e.code]);
     else if (DETECTOR[e.code]) changed = push(channel(tl.detectors, String(e.param)), e.t, DETECTOR[e.code]);
     else if (BUTTON[e.code]) changed = push(channel(tl.buttons, String(e.param)), e.t, BUTTON[e.code]);
+    else if (PREEMPT[e.code]) changed = push(channel(tl.preempts, String(e.param)), e.t, PREEMPT[e.code]);
+    else if (TSP[e.code]) changed = push(channel(tl.tsp, String(e.param)), e.t, TSP[e.code]);
     else if (e.code === PATTERN) changed = push(tl.pattern, e.t, String(e.param));
     if (changed && tl.changes[tl.changes.length - 1] !== e.t) tl.changes.push(e.t);
   }
@@ -150,6 +166,9 @@ export function buildTimeline(log) {
   infer(tl.peds, BEFORE.ped);
   infer(tl.detectors, BEFORE.onOff);
   infer(tl.buttons, BEFORE.onOff);
+  // A priority request that is already running when the log starts is not knowable; assume none.
+  Object.values(tl.preempts).forEach((ch) => { ch.first = 'off'; });
+  Object.values(tl.tsp).forEach((ch) => { ch.first = 'off'; });
   tl.pattern.first = '';
   tl.start = events.length ? events[0].t : 0;
   tl.end = events.length ? events[events.length - 1].t : 0;
@@ -180,6 +199,27 @@ export function channelAt(ch, t) {
 
 const mapAt = (map, t) => Object.fromEntries(Object.entries(map).map(([k, ch]) => [k, channelAt(ch, t)]));
 
+/**
+ * The priority requests running at t: { [number]: { kind, state, since } }.
+ * An exit interval has no end event, so it lapses after EXIT_MS.
+ */
+export function priorityAt(tl, t) {
+  const out = {};
+  const read = (map, kind) => {
+    for (const [number, ch] of Object.entries(map)) {
+      const i = lastAtOrBefore(ch.t, t);
+      const state = i < 0 ? ch.first : ch.s[i];
+      if (state === 'off') continue;
+      const since = i < 0 ? tl.start : ch.t[i];
+      if (state === 'exit' && t - since > EXIT_MS) continue;
+      out[number] = { kind, state, since, number };
+    }
+  };
+  read(tl.preempts, 'preempt');
+  read(tl.tsp, 'tsp');
+  return out;
+}
+
 /** Everything at time t: { phases, peds, overlaps, detectors:Set, buttons:Set, pattern }. */
 export function stateAt(tl, t) {
   const on = (map) => new Set(Object.keys(map).filter((k) => channelAt(map[k], t) === 'on'));
@@ -190,6 +230,7 @@ export function stateAt(tl, t) {
     overlaps: mapAt(tl.overlaps, t),
     detectors: on(tl.detectors),
     buttons: on(tl.buttons),
+    priority: priorityAt(tl, t),
     pattern: channelAt(tl.pattern, t),
   };
 }
@@ -241,12 +282,15 @@ export function movementSignal(design, leg, turn, snap) {
 /** A one-line summary of what the log holds, against the design's detectors. */
 export function describeLog(tl, design, detectorChannels) {
   const dataChannels = Object.keys(tl.detectors).sort((a, b) => a - b);
+  const numbers = (map) => Object.keys(map).sort((a, b) => a - b);
   const planned = new Set(detectorChannels.map(String));
   return {
     phases: Object.keys(tl.phases).sort((a, b) => a - b),
     overlaps: Object.keys(tl.overlaps).sort(),
     peds: Object.keys(tl.peds).sort((a, b) => a - b),
     channels: dataChannels,
+    preempts: numbers(tl.preempts),
+    tsp: numbers(tl.tsp),
     notOnPlan: dataChannels.filter((c) => !planned.has(c)),
     noData: [...planned].filter((c) => c && !tl.detectors[c]).sort((a, b) => a - b),
   };

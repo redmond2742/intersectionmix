@@ -76,8 +76,19 @@ Everything runs in the browser. There is no server and no account.
   - Codes used: 1, 8–12 (phase), 21–23 (pedestrian), 61–65 (overlap),
     81/82 (detector), 89/90 (pushbutton), 131 (pattern).
   - The data stays in the tab and is never saved or uploaded.
-  - The 3D view's signal lamps follow playback too, with a compact
-    play/pause bar in its toolbar.
+  - The 3D view follows playback too:
+    - the signal lamps show what the data says, with a play/pause bar and a
+      **scanner bar** across the top: the whole loaded period as phase bands,
+      with preempt and priority marks, to drag through;
+    - **vehicles** are rebuilt from the detector actuations. A vehicle crossing
+      the advance detector and then the stop bar is carried between the two at
+      the speed that implies, and sits still while a detector stays covered,
+      so queues build and discharge. Everything between detectors is an
+      approximation, and a vehicle that never crosses one is never seen.
+  - **Preemption and priority.** When a preempt (event codes 101–111) or a
+    transit priority request (112–115) is running, its approach lights up, on
+    the plan and in 3D. Give each approach its preempt or priority number
+    under ITS & equipment, since only the agency knows which is which.
 - **ITS & equipment (advanced).** Off until switched on under ⚙ Settings;
   then the Intersection panel gains inputs for:
   - the cabinet (332, 334, 336, P, M, NEMA TS-1/TS-2, ATC, pedestal…) and its
@@ -87,7 +98,8 @@ Everything runs in the browser. There is no server and no account.
   - the detection system (loops, video, radar or mixed); video gives each
     approach a detection camera on its mast arm, and the count and each
     camera's approach and mount can be changed;
-  - preemption: infrared, video or cloud / GPS, and the approaches covered.
+  - preemption: infrared, video or cloud / GPS, the approaches covered, and
+    each one's preempt or priority number in high-resolution data.
 
   Everything is drawn on the plan and modelled in 3D on the mast-arm poles.
   Detectors are drawn by technology: loops as 6 ft round loops along their
@@ -154,6 +166,7 @@ The stack is React and Vite, written in plain JavaScript.
   | `its.js` | ITS equipment data: cabinet, CCTV, detection, preemption |
   | `itsLayout.js` | Where the equipment stands, for the plan and 3D |
   | `videoSync.js` | Video start times and keeping a video in step |
+  | `vehicles.js` | Vehicles followed from detector actuations |
   | `zipReader.js`, `zipWriter.js` | Zip handling, from Traffic Signal Kit |
 
 - The 3D view lives in `src/three/`:

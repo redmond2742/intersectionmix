@@ -20,6 +20,7 @@ export function createPlaybackStore() {
   const store = {
     clock: null,
     controls: null,
+    timeline: null, // the loaded data, for the scanner bar and for vehicles
     get: () => value,
     set(next) {
       if (next === value) return;

@@ -14,7 +14,10 @@ import {
 import { bearingToCompass } from '../lib/gtss.js';
 import { downloadBlob, slugify, planCanvas } from '../lib/download.js';
 import { movementSignal } from '../lib/hires.js';
+import { priorityApproaches } from '../lib/its.js';
+import { buildTracks, vehiclesAt } from '../lib/vehicles.js';
 import PlaybackBar from '../components/PlaybackBar.jsx';
+import PlaybackScrubber from '../components/PlaybackScrubber.jsx';
 
 /** The isometric camera looks in from this side, the south-east. */
 const ISO = new THREE.Vector3(1, 1.05, 1).normalize();
@@ -197,6 +200,25 @@ export default function View3D({
           c.lastBlink = now;
           c.built.setSignals((leg, turn) => movementSignal(design, leg, turn, c.snap), now);
         }
+        // Vehicles over the detectors, and the wash over an approach being preempted.
+        if (c.playback && c.built) {
+          const data = c.playback.timeline;
+          if (data !== c.trackSource) {
+            c.trackSource = data;
+            c.tracks = data ? buildTracks(data, design, geom) : null;
+            if (!c.tracks) c.built.setVehicles([]);
+          }
+          // Parked cars step aside for the ones the detectors saw.
+          c.built.layers.traffic.visible = !c.tracks;
+          const clock = c.playback.clock;
+          if (c.tracks && clock && now - (c.lastCars || 0) > 40) {
+            c.lastCars = now;
+            c.built.setVehicles(vehiclesAt(c.tracks, clock.t));
+          }
+          if (c.snap && (c.priorityOn || Object.keys(c.snap.priority || {}).length)) {
+            c.priorityOn = c.built.setPriority(priorityApproaches(design, c.snap), now);
+          }
+        }
         // Conflicts in time: sweep the "now" plane up through the cycle.
         if (c.st) {
           if (c.st.playing) c.st.t = (c.st.t + dt * c.st.rate) % c.st.span;
@@ -271,6 +293,7 @@ export default function View3D({
   useEffect(() => {
     const c = ctx.current;
     c.snap = snap;
+    c.playback = playback;
     if (!ready || !c.built) return;
     if (snap) c.flashing = c.built.setSignals((leg, turn) => movementSignal(design, leg, turn, snap));
     else {
@@ -553,6 +576,7 @@ export default function View3D({
         <button type="button" className="primary" onClick={exportModel} disabled={!ready}>3D model (.glb)</button>
         <button type="button" className="view3d-close" aria-label="Close 3D view" onClick={onClose}>×</button>
       </div>
+      {snap && playback && <PlaybackScrubber store={playback} />}
       <div className={`view3d-stage${pinMode !== 'idle' ? ' picking' : ''}`} ref={mount}>
         {status && <div className="view3d-status">{status}</div>}
 

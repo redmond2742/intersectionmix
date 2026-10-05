@@ -21,7 +21,7 @@ describe('ITS data', () => {
     expect(its.cctv[0]).toMatchObject({ name: 'North cam', fov: 120, tilt: -20, height: 30 });
     expect(its.detection.system).toBe('loops');
     expect(its.detection.cameras[0].legId).toBe('L1');
-    expect(its.preemption).toEqual({ type: 'ir', legIds: ['1', '2'] });
+    expect(its.preemption).toEqual({ type: 'ir', legIds: ['1', '2'], numbers: {} });
 
     const old = createTemplate('four');
     delete old.its;
@@ -93,7 +93,7 @@ describe('equipment layout', () => {
     const cctv = makeCctv({ corner: geom.corners.find((c) => c.label === 'NW corner').id });
     design.its.cctv.push(cctv);
     setDetectionSystem(design, 'video');
-    design.its.preemption = { type: 'ir', legIds: [] };
+    design.its.preemption = { type: 'ir', legIds: [], numbers: {} };
 
     const layout = equipmentLayout(design, geom);
     expect(layout.cabinet.corner.id).toBe(se.id);

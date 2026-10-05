@@ -498,6 +498,12 @@ table.moves select { width: 100%; }
 }
 .stage-slot .pip-grip { background-color: rgba(35, 39, 46, 0.6); border-top-left-radius: 4px; }
 
+/* The scanner bar: everything loaded, at a glance */
+.scrubber { background: #15181c; padding: 4px 8px 2px; border-bottom: 1px solid #000; flex: none; }
+.scrubber-canvas { display: block; width: 100%; cursor: ew-resize; touch-action: none; border-radius: 3px; }
+.scrubber-labels { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: #9aa3ad; padding-top: 2px; }
+.scrubber-now { font-variant-numeric: tabular-nums; color: #f1f3f5; font-weight: 600; }
+
 /* Compact playback transport (3D view, video window) */
 .view3d-bar .playback-bar { flex: none; }
 .playback-bar { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
@@ -545,6 +551,8 @@ table.moves select { width: 100%; }
 .playback-legend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
 @keyframes pb-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0.15; } }
 .pb-blink { animation: pb-blink 1s linear infinite; }
+@keyframes pb-pulse { 0%, 100% { opacity: 0.18; } 50% { opacity: 0.45; } }
+.pb-pulse { animation: pb-pulse 1.1s ease-in-out infinite; }
 @media (max-width: 560px) {
   .playback-speed { margin-left: 0; }
   .playback-source { display: none; }
@@ -564,8 +572,8 @@ table.moves select { width: 100%; }
 .view3d-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: nowrap;
+  gap: 8px 10px;
+  flex-wrap: wrap;
   padding: 8px 12px;
   background: var(--topbar);
   color: var(--topbar-text);
@@ -574,6 +582,7 @@ table.moves select { width: 100%; }
 .view3d-bar .segmented, .view3d-bar .view3d-phase { flex: none; }
 .view3d-bar button.primary { background: #339af0; border-color: #339af0; color: #fff; }
 .view3d-title { margin-right: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
+.view3d-close { margin-left: auto; }
 .view3d-spacer { flex: 1; }
 .view3d-phase { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 .view3d-close { font-size: 18px; line-height: 1; padding: 4px 10px; }

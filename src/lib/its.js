@@ -57,7 +57,7 @@ export function emptyIts() {
     cabinet: { type: '', corner: '', controller: '' },
     cctv: [],
     detection: { system: 'loops', cameras: [] },
-    preemption: { type: 'none', legIds: [] },
+    preemption: { type: 'none', legIds: [], numbers: {} },
   };
 }
 
@@ -100,6 +100,8 @@ export function normalizeIts(raw) {
   its.preemption = {
     type: PREEMPT_TYPES[pre.type] ? pre.type : 'none',
     legIds: arr(pre.legIds).map(String),
+    // Which preempt or priority number in the data belongs to each approach.
+    numbers: Object.fromEntries(Object.entries(obj(pre.numbers)).map(([k, v]) => [String(k), str(v).trim()])),
   };
   return its;
 }
@@ -139,6 +141,33 @@ export function setCameraCount(design, n) {
     const leg = legs.reduce((best, l) => (tally(l) < tally(best) ? l : best), legs[0]);
     cams.push({ id: itsId('vcam'), legId: leg.id, corner: '' });
   }
+}
+
+/**
+ * Which approaches a running priority request lights up, from a playback
+ * snapshot: { legId: { kind, state, number } }.
+ *
+ * The data names a preempt or priority by number, which only the agency can
+ * match to an approach, so each approach carries its number (set in the
+ * equipment panel). Until any are set, every approach the preemption covers
+ * lights up together, so something is still visible.
+ */
+export function priorityApproaches(design, snap) {
+  const out = {};
+  const running = snap && snap.priority ? Object.values(snap.priority) : [];
+  if (!running.length) return out;
+  const pre = design.its ? design.its.preemption : null;
+  const covered = (pre && pre.legIds.length ? pre.legIds : design.legs.filter((l) => l.inbound.length).map((l) => l.id));
+  const numbers = (pre && pre.numbers) || {};
+  const assigned = covered.filter((id) => numbers[id]);
+  for (const request of running) {
+    const matched = assigned.filter((id) => numbers[id] === String(request.number));
+    for (const legId of (matched.length ? matched : (assigned.length ? [] : covered))) {
+      // A preempt outranks a priority request on the same approach.
+      if (!out[legId] || (out[legId].kind === 'tsp' && request.kind === 'preempt')) out[legId] = request;
+    }
+  }
+  return out;
 }
 
 /** Checks for the equipment, in the shape validate() returns. */

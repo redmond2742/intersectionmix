@@ -52,6 +52,7 @@ export default function App() {
   const [canvasKey, setCanvasKey] = useState(0); // remounts the canvas, refitting it, on a new design
   const [playbackLoaded, setPlaybackLoaded] = useState(false);
   const playbackStore = useMemo(() => createPlaybackStore(), []);
+  if (import.meta.env.DEV) window.__imStore = playbackStore; // for inspecting playback from the console
   const stageRef = useRef(null);
   const [pipRect, setPipRect] = usePipRect(stageRef);
   const [videoMain, setVideoMain] = useState(false);
@@ -561,12 +562,21 @@ export default function App() {
           to the next change, or scrub; the strip under the slider shows the two minutes around the playhead. Space plays
           and pauses, ←/→ step a second, Shift-←/→ jump between changes. The data stays in the tab and is not saved.
         </p>
+        <p>
+          The 3D view follows playback as well: its lamps show the data, a scanner bar across the top gives the whole
+          loaded period as phase bands (with preempt and priority marks) to drag through, and vehicles are rebuilt from
+          the detector actuations. A vehicle that crosses an advance detector and then the stop bar is carried between
+          them at the speed that implies and sits still while a detector stays covered, so queues build and discharge;
+          between detectors it is an approximation, and traffic that never crosses a detector is never shown. While a
+          preempt or priority request is running, its approach lights up.
+        </p>
         <h3>ITS &amp; equipment (advanced)</h3>
         <p>
           Switch on ⚙ › ITS &amp; equipment to record the cabinet and its corner, CCTV cameras, the detection system (with
           a video detection camera per approach on the mast arms) and preemption (infrared, video or cloud). They are
           drawn on the plan and modelled in 3D, and detectors are drawn by technology: loops as 6 ft round loops, video
-          as zones.
+          as zones. Give each approach its preempt or priority number from the data and playback lights that approach up
+          when it runs.
         </p>
         <h3>Video playback (advanced)</h3>
         <p>

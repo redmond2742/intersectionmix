@@ -253,6 +253,7 @@ export default function Playback({ design, store, say, onLoaded }) {
   // Let the 3D views and the video window drive the player.
   useEffect(() => {
     if (!tl) return undefined;
+    store.timeline = tl;
     store.controls = {
       seek: (t) => seek(t),
       setPlaying: (v) => {
@@ -264,6 +265,7 @@ export default function Playback({ design, store, say, onLoaded }) {
     return () => {
       store.controls = null;
       store.clock = null;
+      store.timeline = null;
     };
   }, [tl, store, seek]);
 

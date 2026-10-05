@@ -124,17 +124,30 @@ export default function EquipmentPanel({ design, geom, update }) {
             const all = its.preemption.legIds.length === 0;
             const on = all || its.preemption.legIds.includes(leg.id);
             return (
-              <label key={leg.id} className="check">
-                <input type="checkbox" checked={on} onChange={(e) => set(null, (x) => {
-                  const current = x.preemption.legIds.length ? x.preemption.legIds : approaches.map((l) => l.id);
-                  const next = e.target.checked ? [...new Set([...current, leg.id])] : current.filter((id) => id !== leg.id);
-                  if (!next.length) x.preemption.type = 'none'; // none left: no preemption
-                  x.preemption.legIds = next.length === approaches.length ? [] : next;
-                })} />
-                {legLabel(leg)}
-              </label>
+              <div key={leg.id} className="preempt-row">
+                <label className="check">
+                  <input type="checkbox" checked={on} onChange={(e) => set(null, (x) => {
+                    const current = x.preemption.legIds.length ? x.preemption.legIds : approaches.map((l) => l.id);
+                    const next = e.target.checked ? [...new Set([...current, leg.id])] : current.filter((id) => id !== leg.id);
+                    if (!next.length) x.preemption.type = 'none'; // none left: no preemption
+                    x.preemption.legIds = next.length === approaches.length ? [] : next;
+                  })} />
+                  {legLabel(leg)}
+                </label>
+                {on && (
+                  <label className="preempt-number" title="The preempt or priority number this approach has in high-resolution data">
+                    #
+                    <Text value={its.preemption.numbers[leg.id] || ''} placeholder="—"
+                      onChange={(v) => set(`num:${leg.id}`, (x) => { x.preemption.numbers[leg.id] = v.trim(); })} />
+                  </label>
+                )}
+              </div>
             );
           })}
+          <p className="muted small">
+            The number is the preempt (or priority) this approach answers in the data, so playback can light it up.
+            Leave them blank and every approach lights together.
+          </p>
           {its.preemption.type === 'cloud' && <p className="muted small">Cloud / GPS preemption needs no detector on the poles; it is shown on the cabinet.</p>}
         </div>
       )}
