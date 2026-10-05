@@ -9,6 +9,9 @@ import SignalPicker from './components/SignalPicker.jsx';
 import ExportMenu from './components/ExportMenu.jsx';
 import SettingsMenu from './components/SettingsMenu.jsx';
 import { createPlaybackStore } from './lib/playbackClock.js';
+import { itsChecks } from './lib/its.js';
+import { usePipRect, startPipDrag, rectStyle, ResizeGrip } from './components/Pip.jsx';
+import { EQUIPMENT_COLORS } from './components/EquipmentLayer.jsx';
 import { useHistory } from './useHistory.js';
 import { computeGeometry } from './lib/geometry.js';
 import {
@@ -30,6 +33,7 @@ import { DETECTOR_COLORS, COLORS } from './palette.js';
 const View3D = lazy(() => import('./three/View3D.jsx'));
 // Signal playback is an advanced setting; its player loads only when switched on.
 const Playback = lazy(() => import('./components/Playback.jsx'));
+const VideoWindow = lazy(() => import('./components/VideoWindow.jsx'));
 
 function isTyping(target) {
   return target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable);
@@ -46,9 +50,11 @@ export default function App() {
   const [show3d, setShow3d] = useState(false);
   const [toast, setToast] = useState(null);
   const [canvasKey, setCanvasKey] = useState(0); // remounts the canvas, refitting it, on a new design
-  const [settings, setSettings] = useState(() => loadSettings());
   const [playbackLoaded, setPlaybackLoaded] = useState(false);
   const playbackStore = useMemo(() => createPlaybackStore(), []);
+  const stageRef = useRef(null);
+  const [pipRect, setPipRect] = usePipRect(stageRef);
+  const [videoMain, setVideoMain] = useState(false);
   const svgRef = useRef(null);
   const phasesRef = useRef(null);
   const fileRef = useRef(null);
@@ -56,7 +62,11 @@ export default function App() {
 
   const geom = useMemo(() => computeGeometry(design), [design]);
   const conflicts = useMemo(() => (showConflicts ? conflictPoints(design, geom) : null), [design, geom, showConflicts]);
-  const checks = useMemo(() => validate(design), [design]);
+  const [settings, setSettings] = useState(() => loadSettings());
+  const checks = useMemo(() => [
+    ...validate(design),
+    ...(settings.its ? itsChecks(design, geom.corners.map((c) => c.id)) : []),
+  ], [design, geom, settings.its]);
   const attachedFeed = feed && design.source && design.source.feedId === feed.id ? feed : null;
 
   const say = useCallback((text, tone = 'info', ms = 5000) => {
@@ -94,8 +104,10 @@ export default function App() {
     setSettings(next);
     saveSettings(next);
     if (!next.playback) setPlaybackLoaded(false);
+    if (!next.video) setVideoMain(false);
   };
   const playbackOn = settings.playback && playbackLoaded;
+  const planInPip = settings.video && videoMain;
 
   const select = useCallback((next) => {
     setSelection(next);
@@ -393,10 +405,30 @@ export default function App() {
       )}
 
       <main className="workspace">
-        <section className={`canvas-wrap panel${settings.playback ? ' with-playback' : ''}`}>
-          <IntersectionCanvas key={canvasKey} design={design} geom={geom} selection={selection} phase={phase} conflicts={conflicts}
-            playback={playbackOn ? playbackStore : null}
-            onSelect={select} onBearing={onBearing} onDragEnd={commit} svgRef={svgRef} />
+        <section className={`canvas-wrap panel${settings.playback || settings.video ? ' with-playback' : ''}`}>
+          <div className="stage-area" ref={stageRef}>
+            <div className={`stage-slot ${planInPip ? 'pip' : 'main'}`} style={planInPip ? rectStyle(pipRect) : undefined}>
+              {planInPip ? (
+                <header className="video-head" onPointerDown={(e) => startPipDrag(e, 'move', pipRect, stageRef.current, setPipRect)}>
+                  <strong className="video-title">Plan</strong>
+                  <span className="spacer" />
+                  <button type="button" className="icon" onClick={() => setVideoMain(false)} aria-label="Swap with the video"
+                    title="Make the plan the main view">⇄</button>
+                </header>
+              ) : null}
+              <IntersectionCanvas key={canvasKey} design={design} geom={geom} selection={selection} phase={phase} conflicts={conflicts}
+                playback={playbackOn ? playbackStore : null} equipment={settings.its}
+                onSelect={select} onBearing={onBearing} onDragEnd={commit} svgRef={svgRef} />
+              {planInPip ? <ResizeGrip onPointerDown={(e) => startPipDrag(e, 'resize', pipRect, stageRef.current, setPipRect)} /> : null}
+            </div>
+            {settings.video && (
+              <Suspense fallback={null}>
+                <VideoWindow design={design} geom={geom} planSvg={svgRef.current} store={playbackStore} equipment={settings.its}
+                  updateDesign={update} say={say} role={planInPip ? 'main' : 'pip'} rect={pipRect} areaRef={stageRef}
+                  onRect={setPipRect} onSwap={() => setVideoMain((v) => !v)} />
+              </Suspense>
+            )}
+          </div>
           {settings.playback && (
             <Suspense fallback={<section className="playback empty"><span className="muted">Loading playback…</span></section>}>
               <Playback design={design} store={playbackStore} say={say} onLoaded={setPlaybackLoaded} />
@@ -423,6 +455,15 @@ export default function App() {
                   <span key={purpose}><i style={{ background: color }} />{purpose}</span>
                 ))}
                 <span><i style={{ background: COLORS.bike }} />bike lane</span>
+                {settings.its && (
+                  <>
+                    <span><svg width="13" height="13" viewBox="-7 -7 14 14" aria-hidden="true"><circle r="5" fill="none" stroke="#1fb6cc" strokeWidth="2" /></svg>loop</span>
+                    <span><i style={{ background: EQUIPMENT_COLORS.cabinet }} />cabinet</span>
+                    <span><i style={{ background: EQUIPMENT_COLORS.cctv, borderRadius: '50%' }} />CCTV</span>
+                    {design.its.detection.cameras.length > 0 && <span><i style={{ background: EQUIPMENT_COLORS.detection }} />detection camera</span>}
+                    {design.its.preemption.type !== 'none' && <span><i style={{ background: design.its.preemption.type === 'cloud' ? EQUIPMENT_COLORS.cloud : design.its.preemption.type === 'ir' ? EQUIPMENT_COLORS.preemptIr : EQUIPMENT_COLORS.preemptVideo }} />preemption</span>}
+                  </>
+                )}
                 <span className="muted">Drag ⟳ handles to rotate · click to select</span>
               </>
             )}
@@ -432,7 +473,7 @@ export default function App() {
           )}
 
         </section>
-        <Inspector design={design} selection={selection} update={update} onSelect={select} />
+        <Inspector design={design} geom={geom} equipment={settings.its} selection={selection} update={update} onSelect={select} />
       </main>
 
       <LegStrip design={design} legId={stripLeg || (design.legs[0] && design.legs[0].id)} selection={selection} onSelect={select} update={update} />
@@ -520,6 +561,20 @@ export default function App() {
           to the next change, or scrub; the strip under the slider shows the two minutes around the playhead. Space plays
           and pauses, ←/→ step a second, Shift-←/→ jump between changes. The data stays in the tab and is not saved.
         </p>
+        <h3>ITS &amp; equipment (advanced)</h3>
+        <p>
+          Switch on ⚙ › ITS &amp; equipment to record the cabinet and its corner, CCTV cameras, the detection system (with
+          a video detection camera per approach on the mast arms) and preemption (infrared, video or cloud). They are
+          drawn on the plan and modelled in 3D, and detectors are drawn by technology: loops as 6 ft round loops, video
+          as zones.
+        </p>
+        <h3>Video playback (advanced)</h3>
+        <p>
+          Switch on ⚙ › Video playback to play a local video in a window over the plan; drag, resize or collapse it, or
+          swap it with the plan. Set the video&apos;s start time (or Sync to playhead) and it follows signal playback. With a
+          CCTV camera set up, see the intersection in 3D from that camera beside the video, or laid over it to line the
+          camera up. Nothing is uploaded.
+        </p>
         <h3>Keys</h3>
         <p>⌘/Ctrl-Z undo · ⇧⌘Z or Ctrl-Y redo · Delete removes the selected lane or detector · Esc clears the selection · Shift while dragging a handle rotates by 1°.</p>
       </details>
@@ -527,7 +582,8 @@ export default function App() {
       {show3d && (
         <Suspense fallback={<div className="view3d"><div className="view3d-status">Loading 3D engine…</div></div>}>
           <View3D design={design} geom={geom} planSvg={svgRef.current} initialPhase={phase}
-            onClose={() => setShow3d(false)} say={say} updateDesign={update} />
+            onClose={() => setShow3d(false)} say={say} updateDesign={update}
+            equipment={settings.its} playback={playbackOn ? playbackStore : null} />
         </Suspense>
       )}
       {picker && <SignalPicker feed={picker} onPick={(id) => importSignal(picker, id)} onClose={() => setPicker(null)} />}

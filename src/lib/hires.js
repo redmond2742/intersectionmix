@@ -37,6 +37,14 @@ const BEFORE = {
 const TIME_RE = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,6}))?$/;
 const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,6}))?$/;
 
+/** Epoch ms as the data writes times: M/D/YYYY HH:mm:ss.s. */
+export function formatTime(ms) {
+  if (!Number.isFinite(ms)) return '';
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${Math.floor(d.getMilliseconds() / 100)}`;
+}
+
 /** M/D/YYYY HH:mm:ss.s or YYYY-MM-DD HH:mm:ss.sss, local time, to epoch ms (NaN if neither). */
 export function parseTime(text) {
   const s = String(text || '').trim();

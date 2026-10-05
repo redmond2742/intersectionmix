@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { buildScene, FT as FT_M } from './buildScene.js';
 import { applyPinCamera, fitAspect, syncMarkers } from './pins.js';
 import { buildSpaceTime, disposeGroup } from './spaceTime.js';
+import { createStage, aimSun, createRenderer } from './stage.js';
 import { spaceTime, LIVE_GAP } from '../lib/conflictTime.js';
 import { usedPhases, isOverlap } from '../lib/model.js';
 import {
@@ -12,6 +13,8 @@ import {
 } from '../lib/cameras.js';
 import { bearingToCompass } from '../lib/gtss.js';
 import { downloadBlob, slugify, planCanvas } from '../lib/download.js';
+import { movementSignal } from '../lib/hires.js';
+import PlaybackBar from '../components/PlaybackBar.jsx';
 
 /** The isometric camera looks in from this side, the south-east. */
 const ISO = new THREE.Vector3(1, 1.05, 1).normalize();
@@ -30,7 +33,12 @@ const ISO = new THREE.Vector3(1, 1.05, 1).normalize();
  * shows live in the corner, full screen with Look through, and saves as an
  * image. Pins are kept in the design (updateDesign), not in this view.
  */
-export default function View3D({ design, geom, planSvg, initialPhase, onClose, say, updateDesign }) {
+const NO_SNAPSHOT = () => null;
+const noSubscribe = () => () => {};
+
+export default function View3D({
+  design, geom, planSvg, initialPhase, onClose, say, updateDesign, equipment = false, playback = null,
+}) {
   const mount = useRef(null);
   const ctx = useRef({});
   const phases = usedPhases(design);
@@ -55,6 +63,8 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
   const [stTime, setStTime] = useState(0);
   const [stInfo, setStInfo] = useState(null);
   const selected = pins.find((p) => p.id === selectedId) || null;
+  // Signal playback, when data is loaded: the lamps follow it instead of the phase picker.
+  const snap = useSyncExternalStore(playback ? playback.subscribe : noSubscribe, playback ? playback.get : NO_SNAPSHOT);
 
   useEffect(() => {
     const el = mount.current;
@@ -67,15 +77,7 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
     // StrictMode mounts this effect twice in development; the throwaway
     // mount is disposed before its await returns, so it never creates a
     // WebGL context. Creating and tearing one down is a visible stall.
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#cfe1f1');
-    scene.fog = new THREE.Fog('#cfe1f1', 500, 1600);
-    const hemi = new THREE.HemisphereLight('#f4f8ff', '#b7b29a', 1.1);
-    const sun = new THREE.DirectionalLight('#fff6e8', 2.2);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(4096, 4096);
-    sun.shadow.bias = -0.0004;
-    scene.add(hemi, sun, sun.target);
+    const { scene, sun } = createStage();
     const perspective = new THREE.PerspectiveCamera(40, 1, 0.3, 4000);
     const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, -2000, 4000);
     ctx.current = { scene, perspective, ortho, camera: ortho, sun };
@@ -100,34 +102,20 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
       const canvas = await planCanvas(planSvg, geom.bounds, 4096);
       if (disposed) return;
 
-      renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-      renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-      renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = THREE.PCFShadowMap;
-      renderer.outputColorSpace = THREE.SRGBColorSpace;
-      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer = createRenderer();
       // Opens in isometric; the mode effect takes over from here.
       const controls = new OrbitControls(ortho, renderer.domElement);
       controls.enableDamping = true;
       controls.maxPolarAngle = Math.PI * 0.49;
       Object.assign(ctx.current, { renderer, controls });
 
-      const built = buildScene({ design, geom, planCanvas: canvas, anisotropy: renderer.capabilities.getMaxAnisotropy() });
+      const built = buildScene({ design, geom, planCanvas: canvas, anisotropy: renderer.capabilities.getMaxAnisotropy(), equipment });
       scene.add(built.root);
       ctx.current.built = built;
       built.setPhase(ctx.current.phase || '');
 
       const { center, size: extent } = built;
-      sun.position.set(center.x - extent * 0.45, extent * 0.9, center.z + extent * 0.55);
-      sun.target.position.copy(center);
-      const cam = sun.shadow.camera;
-      cam.left = -extent * 0.7;
-      cam.right = extent * 0.7;
-      cam.top = extent * 0.7;
-      cam.bottom = -extent * 0.7;
-      cam.near = 1;
-      cam.far = extent * 3;
-      cam.updateProjectionMatrix();
+      aimSun(sun, center, extent);
 
       perspective.position.set(center.x - extent * 0.32, extent * 0.5, center.z + extent * 0.62);
       ortho.position.copy(center).add(ISO.clone().multiplyScalar(extent * 1.5));
@@ -205,6 +193,10 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
         const dt = Math.min(0.1, (now - last) / 1000);
         last = now;
         c.controls.update();
+        if (c.flashing && c.snap && now - (c.lastBlink || 0) > 250) {
+          c.lastBlink = now;
+          c.built.setSignals((leg, turn) => movementSignal(design, leg, turn, c.snap), now);
+        }
         // Conflicts in time: sweep the "now" plane up through the cycle.
         if (c.st) {
           if (c.st.playing) c.st.t = (c.st.t + dt * c.st.rate) % c.st.span;
@@ -274,6 +266,18 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
     ctx.current.phase = phase;
     if (ready && ctx.current.built) ctx.current.built.setPhase(phase);
   }, [phase, ready]);
+
+  // Playback drives the lamps; a flashing yellow arrow keeps being redrawn from the loop.
+  useEffect(() => {
+    const c = ctx.current;
+    c.snap = snap;
+    if (!ready || !c.built) return;
+    if (snap) c.flashing = c.built.setSignals((leg, turn) => movementSignal(design, leg, turn, snap));
+    else {
+      c.flashing = false;
+      c.built.setPhase(c.phase || '');
+    }
+  }, [snap, ready, design]);
 
   // Switching cameras keeps the point being looked at.
   useEffect(() => {
@@ -528,13 +532,17 @@ export default function View3D({ design, geom, planSvg, initialPhase, onClose, s
           <button type="button" className={mode === 'perspective' ? 'on' : ''} onClick={() => setMode('perspective')}>Perspective</button>
           <button type="button" className={mode === 'isometric' ? 'on' : ''} onClick={() => setMode('isometric')}>Isometric</button>
         </div>
-        <label className="view3d-phase">
-          Signals
-          <select value={phase} onChange={(e) => setPhase(e.target.value)}>
-            <option value="">All red</option>
-            {phases.map((p) => <option key={p} value={p}>Phase {p}{isOverlap(design, p) ? ' (overlap)' : ''}</option>)}
-          </select>
-        </label>
+        {snap && playback ? (
+          <PlaybackBar store={playback} className="dark" />
+        ) : (
+          <label className="view3d-phase">
+            Signals
+            <select value={phase} onChange={(e) => setPhase(e.target.value)}>
+              <option value="">All red</option>
+              {phases.map((p) => <option key={p} value={p}>Phase {p}{isOverlap(design, p) ? ' (overlap)' : ''}</option>)}
+            </select>
+          </label>
+        )}
         <button type="button" className={panelOpen ? 'on' : ''} onClick={() => setPanelOpen((v) => !v)} disabled={!ready}
           aria-pressed={panelOpen}>Camera pins{pins.length ? ` (${pins.length})` : ''}</button>
         <button type="button" className={stOn ? 'on' : ''} onClick={() => setStOn((v) => !v)} disabled={!ready}

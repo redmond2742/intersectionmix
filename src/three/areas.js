@@ -82,39 +82,5 @@ export function surfaceAreas(geom) {
   return { road: roadArea, walks, islands };
 }
 
-/** Even-odd point in polygon, for a plan polygon (array of {x, y}). */
-export function inside(point, polygon) {
-  let hit = false;
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
-    const a = polygon[i];
-    const b = polygon[j];
-    if ((a.y > point.y) !== (b.y > point.y) && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) hit = !hit;
-  }
-  return hit;
-}
-
-/** True when a plan point is on a roadway (with `margin` feet of kerb to spare). */
-export function onRoad(geom, point, margin = 1) {
-  if (geom.asphaltCore.length >= 3 && inside(point, geom.asphaltCore)) return true;
-  for (const g of geom.legs) {
-    const y = point.x * g.u.x + point.y * g.u.y;
-    const x = point.x * g.r.x + point.y * g.r.y;
-    if (y > -margin && y < g.L + margin && x > g.cs.curbOut - margin && x < g.cs.curbIn + margin) return true;
-    if (g.slip && [g.slip.asphalt, g.slip.taper.asphalt, g.slip.receiving.asphalt].some((poly) => inside(point, poly))) return true;
-  }
-  return false;
-}
-
-/** True when a plan point is on roadway, sidewalk or island: anywhere a tree should not grow. */
-export function onPavement(geom, point) {
-  if (onRoad(geom, point, 3)) return true;
-  if (geom.sidewalkCore.length >= 3 && inside(point, geom.sidewalkCore)) return true;
-  for (const g of geom.legs) {
-    const y = point.x * g.u.x + point.y * g.u.y;
-    const x = point.x * g.r.x + point.y * g.r.y;
-    if (y > -3 && y < g.L + 3 && x > g.cs.sidewalkOut[0] - 3 && x < g.cs.sidewalkIn[1] + 3) return true;
-    if (g.slip && [g.slip.sidewalk, g.slip.taper.sidewalk, g.slip.receiving.sidewalk].some((poly) => inside(point, poly))) return true;
-    if (g.slip && g.slip.islandPoints && inside(point, g.slip.islandPoints)) return true;
-  }
-  return false;
-}
+// Point tests live with the plan geometry, so the plan can use them without polygon-clipping.
+export { inside, onRoad, onPavement } from '../lib/geometry.js';

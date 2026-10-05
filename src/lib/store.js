@@ -21,7 +21,7 @@ export const SHARE_PREFIX = '#d=';
 export const SETTINGS_KEY = 'intersectionMix:settings:v1';
 
 /** App settings. Advanced features are off until switched on here. */
-export const DEFAULT_SETTINGS = { playback: false };
+export const DEFAULT_SETTINGS = { playback: false, its: false, video: false };
 
 export function defaultStorage() {
   try {

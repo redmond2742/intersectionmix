@@ -24,6 +24,7 @@
  */
 
 import { medianWidth, turnTargets, findLeg, TURNS } from './model.js';
+import { bearingToCompass } from './gtss.js';
 
 export const CROSSWALK_WIDTH = 10;
 export const STOP_BAR_GAP = 4;
@@ -273,7 +274,111 @@ export function computeGeometry(design) {
     maxY: Math.max(...points.map((p) => p.y)) + pad,
   };
 
+  for (const c of corners) describeCorner(c);
+
   return { legs, byId, corners, asphaltCore, sidewalkCore, fillets, filletShapes, bounds, far };
+}
+
+/** A corner's id: its two legs, in either order. */
+export function cornerKey(a, b) {
+  return [String(a), String(b)].sort().join('|');
+}
+
+/**
+ * Names a corner ("NE corner", or "S side" across the open side of a T) and
+ * finds where equipment stands on it: `mount` on the sidewalk, clear of the
+ * curb return, and `back` just behind the sidewalk, for a cabinet.
+ */
+function describeCorner(c) {
+  const { gi, gj } = c;
+  const a = rad(outAngle(gi) + c.gap / 2);
+  const out = { x: Math.cos(a), y: Math.sin(a) }; // from the centre toward the corner
+  c.id = cornerKey(gi.id, gj.id);
+  c.out = out;
+  const compass = bearingToCompass((Math.atan2(out.x, -out.y) * 180) / Math.PI) || '';
+  const walk = Math.max(Number(gi.leg.sidewalk) || 0, Number(gj.leg.sidewalk) || 0, 4);
+  if (c.valid && c.inner.point) {
+    const spread = len(add(gi.u, gj.u));
+    const kerb = 0.25 * (c.radius || 0) * spread; // the curb return's middle, out from the corner point
+    const across = walk * Math.max(1, spread * 0.9);
+    c.label = `${compass} corner`;
+    c.mount = add(c.inner.point, mul(out, kerb + Math.max(2, (across - kerb) / 2)));
+    c.back = add(c.inner.point, mul(out, Math.max(kerb, across) + 4));
+  } else {
+    const mid = mul(add(c.inner.pI, c.inner.pJ), 0.5);
+    c.label = `${compass} side`;
+    c.mount = add(mid, mul(out, walk / 2));
+    c.back = add(mid, mul(out, walk + 4));
+  }
+}
+
+/** Even-odd point in polygon, for a plan polygon (array of {x, y}). */
+export function inside(point, polygon) {
+  let hit = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const a = polygon[i];
+    const b = polygon[j];
+    if ((a.y > point.y) !== (b.y > point.y) && point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x) hit = !hit;
+  }
+  return hit;
+}
+
+/** True when a plan point is on a roadway (with `margin` feet of kerb to spare). */
+export function onRoad(geom, point, margin = 1) {
+  if (geom.asphaltCore.length >= 3 && inside(point, geom.asphaltCore)) return true;
+  for (const g of geom.legs) {
+    const y = point.x * g.u.x + point.y * g.u.y;
+    const x = point.x * g.r.x + point.y * g.r.y;
+    if (y > -margin && y < g.L + margin && x > g.cs.curbOut - margin && x < g.cs.curbIn + margin) return true;
+    if (g.slip && [g.slip.asphalt, g.slip.taper.asphalt, g.slip.receiving.asphalt].some((poly) => inside(point, poly))) return true;
+  }
+  return false;
+}
+
+/** True when a plan point is on roadway, sidewalk or island: anywhere a tree should not grow. */
+export function onPavement(geom, point) {
+  if (onRoad(geom, point, 3)) return true;
+  if (geom.sidewalkCore.length >= 3 && inside(point, geom.sidewalkCore)) return true;
+  for (const g of geom.legs) {
+    const y = point.x * g.u.x + point.y * g.u.y;
+    const x = point.x * g.r.x + point.y * g.r.y;
+    if (y > -3 && y < g.L + 3 && x > g.cs.sidewalkOut[0] - 3 && x < g.cs.sidewalkIn[1] + 3) return true;
+    if (g.slip && [g.slip.sidewalk, g.slip.taper.sidewalk, g.slip.receiving.sidewalk].some((poly) => inside(point, poly))) return true;
+    if (g.slip && g.slip.islandPoints && inside(point, g.slip.islandPoints)) return true;
+  }
+  return false;
+}
+
+/**
+ * The mast-arm signal pole for each approach with lanes: on the far side of
+ * the intersection, at the far-right corner, nudged off the roadway, with
+ * the arm reaching back over the approach lanes. The plan and the 3D view
+ * both place poles from here. Returns
+ * [{ legId, point, poleX, yFar, armEnd, cornerId }].
+ */
+export function signalPoles(design, geom) {
+  const maxCw = Math.max(0, ...geom.legs.map((g) => g.cwEnd));
+  const poles = [];
+  for (const g of geom.legs) {
+    if (!g.cs.inbound.length) continue;
+    const targets = turnTargets({ legs: design.legs }, g.leg);
+    const through = geom.byId.get(targets.T);
+    const yFar = -((through ? through.cwEnd : maxCw) + 8);
+    let poleX = g.cs.curbIn + 5;
+    for (let tries = 0; tries < 12 && onRoad(geom, g.world(yFar, poleX), 2); tries += 1) poleX += 4;
+    const point = g.world(yFar, poleX);
+    let cornerId = null;
+    let best = Infinity;
+    for (const c of geom.corners) {
+      const d = len(sub(c.mount, point));
+      if (d < best) {
+        best = d;
+        cornerId = c.id;
+      }
+    }
+    poles.push({ legId: g.id, point, poleX, yFar, armEnd: g.world(yFar, g.cs.inbound[0].cx - 2), cornerId });
+  }
+  return poles;
 }
 
 /* ------------------------------------------------------------------ */

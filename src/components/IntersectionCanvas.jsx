@@ -7,6 +7,8 @@ import { bearingToTravel } from '../lib/gtss.js';
 import { viewCone } from '../lib/cameras.js';
 import { ConflictMarker, ConflictPaths } from './ConflictMarkers.jsx';
 import PlaybackOverlay from './PlaybackOverlay.jsx';
+import DetectorShape, { DetectorDefs } from './DetectorShape.jsx';
+import EquipmentLayer from './EquipmentLayer.jsx';
 
 const FONT = 'Inter, system-ui, -apple-system, Segoe UI, sans-serif';
 
@@ -23,7 +25,7 @@ function useMarkers(colors) {
   }, [colors.join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-function LegMarkings({ g, selection, onSelect }) {
+function LegMarkings({ g, selection, onSelect, byTechnology }) {
   const { cs, leg } = g;
   const selectedLane = selection && selection.laneId;
   const selectedDet = selection && selection.detId;
@@ -106,12 +108,12 @@ function LegMarkings({ g, selection, onSelect }) {
         const color = detectorColor(item.det.purpose);
         const selected = selectedDet === item.det.id;
         return (
-          <Rect key={item.det.id} x0={item.x0} x1={item.x1} y0={item.y0} y1={item.y1}
+          <DetectorShape key={item.det.id} g={g} item={item} byTechnology={byTechnology}
             fill={color} fillOpacity="0.32" stroke={selected ? COLORS.select : color} strokeWidth={selected ? 1.2 : 0.6}
             style={{ cursor: 'pointer' }}
             onClick={(e) => { e.stopPropagation(); onSelect({ type: 'detector', legId: g.id, detId: item.det.id }); }}>
-            <title>{`Channel ${item.det.channel} · ${item.det.purpose} · ${item.det.setback} ft back, ${item.det.length} ft long`}</title>
-          </Rect>
+            <title>{`Channel ${item.det.channel} · ${item.det.purpose} · ${item.det.technology.replace('_', ' ')} · ${item.det.setback} ft back, ${item.det.length} ft long`}</title>
+          </DetectorShape>
         );
       })}
 
@@ -143,7 +145,7 @@ function SpeedSign({ sign }) {
 }
 
 export default function IntersectionCanvas({
-  design, geom, selection, phase, conflicts, playback, onSelect, onBearing, onDragEnd, svgRef,
+  design, geom, selection, phase, conflicts, playback, equipment, onSelect, onBearing, onDragEnd, svgRef,
 }) {
   const [frozen, setFrozen] = useState(null);
   const [view, setView] = useState(null); // null: fit the whole design
@@ -296,6 +298,7 @@ export default function IntersectionCanvas({
       onClick={() => onSelect(null)} onClickCapture={swallowClickAfterPan}
       onPointerDown={startPan} onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
       <defs>
+        <DetectorDefs />
         {[...markers.entries()].map(([color, id]) => (
           <marker key={id} id={id} viewBox="0 0 10 10" refX="5" refY="5" markerWidth="3.2" markerHeight="3.2" orient="auto-start-reverse">
             <path d="M0 0 L10 5 L0 10 z" fill={color} />
@@ -344,7 +347,7 @@ export default function IntersectionCanvas({
       {geom.legs.map((g) => (
         <g key={`mk${g.id}`} style={{ cursor: 'pointer' }}
           onClick={(e) => { e.stopPropagation(); onSelect({ type: 'leg', legId: g.id }); }}>
-          <LegMarkings g={g} selection={selection && selection.legId === g.id ? selection : null} onSelect={onSelect} />
+          <LegMarkings g={g} selection={selection && selection.legId === g.id ? selection : null} onSelect={onSelect} byTechnology={equipment} />
         </g>
       ))}
 
@@ -420,7 +423,10 @@ export default function IntersectionCanvas({
       )}
 
       {/* Signal playback: what every signal and detector shows at the playhead */}
-      {playback && <PlaybackOverlay design={design} geom={geom} store={playback} k={k} />}
+      {playback && <PlaybackOverlay design={design} geom={geom} store={playback} k={k} byTechnology={equipment} />}
+
+      {/* Cabinet, poles, cameras and preemption (advanced setting) */}
+      {equipment && <EquipmentLayer design={design} geom={geom} k={k} />}
 
       {/* Detector channels */}
       {geom.legs.map((g) => g.detectors.map((item) => (

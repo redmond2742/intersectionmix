@@ -1,25 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   parseHiRes, mergeFiles, buildTimeline, stateAt, changeIndex, nextChange, previousChange, describeLog, lastAtOrBefore,
+  formatTime,
 } from '../lib/hires.js';
 import { readZipText } from '../lib/zipReader.js';
+import { SPEEDS } from '../lib/playbackClock.js';
 import { allDetectors, comparePhases } from '../lib/model.js';
 import { LAMP } from './PlaybackOverlay.jsx';
 
-export const SPEEDS = [1, 2, 4, 8, 16, 32];
 const SKIP_MS = 30000;
 const WINDOW_MS = 120000; // the timeline strip shows two minutes around the playhead
 const PUSH_MS = 40; // the plan redraws at most this often while playing
 const UI_MS = 100; // the clock and scrubber update this often
 
 const PED_COLORS = { walk: '#40c057', fdw: '#f76707' };
-
-const pad = (n, w = 2) => String(n).padStart(w, '0');
-export function formatTime(ms) {
-  if (!Number.isFinite(ms)) return '';
-  const d = new Date(ms);
-  return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${Math.floor(d.getMilliseconds() / 100)}`;
-}
 
 function isTyping(target) {
   return target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable) && target.type !== 'range';
@@ -240,6 +234,7 @@ export default function Playback({ design, store, say, onLoaded }) {
         c.lastIndex = index;
         c.lastPush = now;
       }
+      store.frame({ t: c.t, playing: c.playing, speed: c.speed, start: tl.start, end: tl.end });
       // Paused, it still redraws now and then, to keep flashing don't walk flashing.
       if (c.dirty || c.playing || now - c.lastDraw > 250) {
         drawStrip(c.t);
@@ -254,6 +249,23 @@ export default function Playback({ design, store, say, onLoaded }) {
     frame = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(frame);
   }, [tl, store, drawStrip]);
+
+  // Let the 3D views and the video window drive the player.
+  useEffect(() => {
+    if (!tl) return undefined;
+    store.controls = {
+      seek: (t) => seek(t),
+      setPlaying: (v) => {
+        if (v === true && clock.current.t >= tl.end) seek(tl.start);
+        setPlaying(v);
+      },
+      setSpeed,
+    };
+    return () => {
+      store.controls = null;
+      store.clock = null;
+    };
+  }, [tl, store, seek]);
 
   /* ---------------- Keys ---------------- */
 

@@ -1,5 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
 
+const OPTIONS = [
+  {
+    key: 'playback',
+    label: 'Signal playback',
+    detail: 'Load high-resolution controller data (the Indiana event log, .csv) and play it back on the plan and in 3D: '
+      + 'phase greens, yellows and reds, walk signals and detector actuations.',
+  },
+  {
+    key: 'its',
+    label: 'ITS & equipment',
+    detail: 'Cabinet, CCTV cameras, the detection system with its cameras, and preemption, on the plan and in 3D. '
+      + 'Detectors are drawn by technology: loops as 6 ft circles, video as zones.',
+  },
+  {
+    key: 'video',
+    label: 'Video playback',
+    detail: 'Play a local video in a window beside the plan, synced to signal playback by its start time, with a 3D view '
+      + 'from a CCTV camera (needs ITS & equipment).',
+  },
+];
+
 /** The ⚙ menu. Advanced features live here, off until switched on. */
 export default function SettingsMenu({ settings, onChange }) {
   const [open, setOpen] = useState(false);
@@ -30,16 +51,15 @@ export default function SettingsMenu({ settings, onChange }) {
       {open && (
         <div className="menu settings-panel" role="dialog" aria-label="Settings">
           <div className="settings-head">Advanced</div>
-          <label className="settings-option">
-            <input type="checkbox" checked={!!settings.playback} onChange={(e) => set('playback', e.target.checked)} />
-            <span>
-              <span className="menu-label">Signal playback</span>
-              <span className="menu-detail">
-                Load high-resolution controller data (the Indiana event log, .csv) and play it back on the plan: phase
-                greens, yellows and reds, walk signals and detector actuations.
+          {OPTIONS.map((o) => (
+            <label key={o.key} className="settings-option">
+              <input type="checkbox" checked={!!settings[o.key]} onChange={(e) => set(o.key, e.target.checked)} />
+              <span>
+                <span className="menu-label">{o.label}</span>
+                <span className="menu-detail">{o.detail}</span>
               </span>
-            </span>
-          </label>
+            </label>
+          ))}
         </div>
       )}
     </div>

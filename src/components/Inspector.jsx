@@ -9,42 +9,10 @@ import {
 } from '../lib/model.js';
 import { bearingToTravel, bearingToOrigin } from '../lib/gtss.js';
 
+import { Field, Text, Num, Choice } from './fields.jsx';
+import EquipmentPanel from './EquipmentPanel.jsx';
+
 const PHASE_OPTIONS = ['1', '2', '3', '4', '5', '6', '7', '8'];
-
-function Field({ label, children, hint }) {
-  return (
-    <label className="field">
-      <span className="field-label">{label}</span>
-      {children}
-      {hint && <span className="field-hint">{hint}</span>}
-    </label>
-  );
-}
-
-function Text({ value, onChange, ...rest }) {
-  return <input type="text" value={value ?? ''} onChange={(e) => onChange(e.target.value)} {...rest} />;
-}
-
-function Num({ value, onChange, min, max, step = 1, ...rest }) {
-  return (
-    <input type="number" value={value ?? ''} min={min} max={max} step={step}
-      onChange={(e) => {
-        const n = Number(e.target.value);
-        if (e.target.value !== '' && Number.isFinite(n)) onChange(n);
-      }} {...rest} />
-  );
-}
-
-function Choice({ value, onChange, options }) {
-  const entries = Array.isArray(options) ? options.map((o) => [o, o || '—']) : Object.entries(options);
-  const known = entries.some(([v]) => v === value);
-  return (
-    <select value={value} onChange={(e) => onChange(e.target.value)}>
-      {!known && <option value={value}>{value}</option>}
-      {entries.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-    </select>
-  );
-}
 
 function PhaseInput({ value, onChange, placeholder = '—' }) {
   return (
@@ -77,7 +45,7 @@ function DetectorList({ leg, dets, onSelect }) {
   );
 }
 
-function IntersectionPanel({ design, update, onSelect }) {
+function IntersectionPanel({ design, geom, equipment, update, onSelect }) {
   const set = (key, recipe) => update(recipe, { key: `design:${key}` });
   const detCount = design.legs.reduce((n, leg) => n + leg.detectors.length, 0);
   return (
@@ -112,6 +80,7 @@ function IntersectionPanel({ design, update, onSelect }) {
           </li>
         ))}
       </ul>
+      {equipment && geom && <EquipmentPanel design={design} geom={geom} update={update} />}
     </div>
   );
 }
@@ -325,7 +294,7 @@ function DetectorPanel({ leg, det, update, onSelect }) {
   );
 }
 
-export default function Inspector({ design, selection, update, onSelect }) {
+export default function Inspector({ design, geom, equipment, selection, update, onSelect }) {
   let body = null;
   const leg = selection ? findLeg(design, selection.legId) : null;
   if (selection && selection.type === 'detector' && leg) {
@@ -336,7 +305,7 @@ export default function Inspector({ design, selection, update, onSelect }) {
     if (lane) body = <LanePanel design={design} leg={leg} lane={lane} update={update} onSelect={onSelect} />;
   }
   if (!body && leg) body = <LegPanel design={design} leg={leg} update={update} onSelect={onSelect} />;
-  if (!body) body = <IntersectionPanel design={design} update={update} onSelect={onSelect} />;
+  if (!body) body = <IntersectionPanel design={design} geom={geom} equipment={equipment} update={update} onSelect={onSelect} />;
 
   return (
     <aside className="inspector panel">

@@ -14,7 +14,9 @@
  */
 
 import * as THREE from 'three';
-import { surfaceAreas, onRoad, onPavement } from './areas.js';
+import { surfaceAreas, onPavement } from './areas.js';
+import { signalPoles } from '../lib/geometry.js';
+import { buildEquipment } from './equipment.js';
 import { turnTargets, findLeg, legLabel } from '../lib/model.js';
 
 export const FT = 0.3048;
@@ -197,14 +199,9 @@ function setLamps(lamps, state) {
  */
 function buildSignals(design, geom, root, materials) {
   const heads = [];
-  const maxCw = Math.max(0, ...geom.legs.map((g) => g.cwEnd));
-  for (const g of geom.legs) {
-    if (!g.cs.inbound.length) continue;
+  for (const { legId, poleX, yFar } of signalPoles(design, geom)) {
+    const g = geom.byId.get(legId);
     const targets = turnTargets({ legs: design.legs }, g.leg);
-    const through = geom.byId.get(targets.T);
-    const yFar = -((through ? through.cwEnd : maxCw) + 8);
-    let poleX = g.cs.curbIn + 5;
-    for (let tries = 0; tries < 12 && onRoad(geom, g.world(yFar, poleX), 2); tries += 1) poleX += 4;
 
     const assembly = new THREE.Group();
     assembly.position.copy(at(g.world(yFar, poleX)));
@@ -343,7 +340,7 @@ function trees(geom, root, materials) {
  * Builds the intersection as one group. `planCanvas` is the plan drawn at
  * `geom.bounds`. Returns { root, center, size, setPhase }.
  */
-export function buildScene({ design, geom, planCanvas, anisotropy = 8 }) {
+export function buildScene({ design, geom, planCanvas, anisotropy = 8, equipment = false }) {
   const b = geom.bounds;
   const w = b.maxX - b.minX;
   const h = b.maxY - b.minY;
@@ -403,6 +400,10 @@ export function buildScene({ design, geom, planCanvas, anisotropy = 8 }) {
     return group;
   };
   const layers = { signals: layer('Signals'), signs: layer('Signs'), traffic: layer('Traffic'), trees: layer('Trees') };
+  if (equipment && design.its) {
+    layers.equipment = layer('Equipment');
+    buildEquipment(design, geom, layers.equipment);
+  }
   const heads = buildSignals(design, geom, layers.signals, materials);
   speedSigns(geom, layers.signs, materials);
   traffic(geom, layers.traffic, materials);
@@ -417,6 +418,32 @@ export function buildScene({ design, geom, planCanvas, anisotropy = 8 }) {
   };
   setPhase('');
 
+  /**
+   * Lamps from signal playback. stateFor(leg, turn) is the movement's
+   * indication (green, yellow, red, permissive, unknown); a head over a
+   * shared lane shows the best of its turns. Permissive flashes yellow, so
+   * call again a few times a second while this returns true.
+   */
+  const setSignals = (stateFor, now = performance.now()) => {
+    let flashing = false;
+    const blinkOn = Math.floor(now / 500) % 2 === 0;
+    for (const head of heads) {
+      const leg = findLeg(design, head.legId);
+      const lane = leg && leg.inbound.find((l) => l.id === head.laneId);
+      if (!lane) continue;
+      const states = lane.turns.map((t) => stateFor(leg, t));
+      let lamp = 'off';
+      if (states.includes('green')) lamp = 'green';
+      else if (states.includes('permissive')) {
+        flashing = true;
+        lamp = blinkOn ? 'yellow' : 'off';
+      } else if (states.includes('yellow')) lamp = 'yellow';
+      else if (states.includes('red')) lamp = 'red';
+      setLamps(head.lamps, lamp);
+    }
+    return flashing;
+  };
+
   return {
     root,
     // What a camera pin can stand on: the ground and the raised surfaces, not cars or trees.
@@ -425,6 +452,7 @@ export function buildScene({ design, geom, planCanvas, anisotropy = 8 }) {
     center: new THREE.Vector3(((b.minX + b.maxX) / 2) * FT, 0, ((b.minY + b.maxY) / 2) * FT),
     size: Math.max(w, h) * FT,
     setPhase,
+    setSignals,
     describe: () => design.legs.map(legLabel).join(', '),
   };
 }

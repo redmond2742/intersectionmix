@@ -1,5 +1,6 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import LaneGlyph from './LaneGlyph.jsx';
+import DetectorShape from './DetectorShape.jsx';
 import { detectorColor } from '../palette.js';
 import { movementPath } from '../lib/geometry.js';
 import { legTurns, TURNS } from '../lib/model.js';
@@ -30,7 +31,7 @@ const noSubscribe = () => () => {};
  * The snapshot comes from a small store, so only this layer redraws as the
  * playback moves, not the whole plan.
  */
-export default function PlaybackOverlay({ design, geom, store, k }) {
+export default function PlaybackOverlay({ design, geom, store, k, byTechnology }) {
   const snap = useSyncExternalStore(store ? store.subscribe : noSubscribe, store ? store.get : NO_SNAPSHOT);
 
   // Every lane's path for every turn, worked out once per design.
@@ -98,7 +99,7 @@ export default function PlaybackOverlay({ design, geom, store, k }) {
 
             {/* Occupied detectors */}
             {g.detectors.filter((item) => snap.detectors.has(String(item.det.channel))).map((item) => (
-              <Rect key={item.det.id} x0={item.x0} x1={item.x1} y0={item.y0} y1={item.y1}
+              <DetectorShape key={item.det.id} g={g} item={item} byTechnology={byTechnology}
                 fill={detectorColor(item.det.purpose)} fillOpacity="0.95" stroke="#fff" strokeWidth="0.8" />
             ))}
 
@@ -119,11 +120,11 @@ export default function PlaybackOverlay({ design, geom, store, k }) {
                         fill={LAMP[state]} className={state === 'permissive' ? 'pb-blink' : undefined} />
                     );
                   })}
-                  <rect x={item.cx - face / 2} y={g.S + 2.6} width={face} height={lamp + 0.6} rx="1" fill="#1d2126" />
+                  <rect x={item.cx - face / 2} y={g.S - lamp - 0.9} width={face} height={lamp + 0.6} rx="1" fill="#1d2126" />
                   {turns.map((turn, i) => {
                     const state = signal(leg, turn);
                     const cx = item.cx - face / 2 + 0.4 + lamp * (i + 0.5);
-                    const cy = g.S + 2.9 + lamp / 2;
+                    const cy = g.S - 0.6 - lamp / 2; // between the crosswalk and the stop bar, clear of the loops
                     return (
                       <g key={turn} className={state === 'permissive' ? 'pb-blink' : undefined}>
                         <circle cx={cx} cy={cy} r={lamp / 2 - 0.25} fill={LAMP[state]} />

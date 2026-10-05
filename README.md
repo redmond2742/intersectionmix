@@ -76,6 +76,36 @@ Everything runs in the browser. There is no server and no account.
   - Codes used: 1, 8–12 (phase), 21–23 (pedestrian), 61–65 (overlap),
     81/82 (detector), 89/90 (pushbutton), 131 (pattern).
   - The data stays in the tab and is never saved or uploaded.
+  - The 3D view's signal lamps follow playback too, with a compact
+    play/pause bar in its toolbar.
+- **ITS & equipment (advanced).** Off until switched on under ⚙ Settings;
+  then the Intersection panel gains inputs for:
+  - the cabinet (332, 334, 336, P, M, NEMA TS-1/TS-2, ATC, pedestal…) and its
+    corner, and the controller;
+  - CCTV cameras: corner, height, heading, tilt and field of view (mounted on
+    the corner's signal pole, or their own);
+  - the detection system (loops, video, radar or mixed); video gives each
+    approach a detection camera on its mast arm, and the count and each
+    camera's approach and mount can be changed;
+  - preemption: infrared, video or cloud / GPS, and the approaches covered.
+
+  Everything is drawn on the plan and modelled in 3D on the mast-arm poles.
+  Detectors are drawn by technology: loops as 6 ft round loops along their
+  length, video as zones, radar as hatched zones, magnetometers as pucks.
+  The equipment travels with the design file and share links; GTSS has no
+  columns for it.
+- **Video playback (advanced).** Off until switched on under ⚙ Settings.
+  - Open a local video (nothing is uploaded). It plays in a window that floats
+    over the plan, can be dragged, resized and collapsed, and swaps places
+    with the plan (⇄); ⧉ pops it out into the browser's picture-in-picture.
+  - Give it a start time (read from names like `CAM1_20260917_080000.mp4`
+    when it can be, remembered per file), or press **Sync to playhead**; it
+    then follows signal playback, playing at the same speed up to 16× and
+    stepping frames at 32×. Nudge ±0.1 s or ±1 s to fine-tune.
+  - With a CCTV camera set up under ITS & equipment, show the intersection in
+    3D from that camera beside the video (or instead of it), lamps following
+    playback. **Overlay** lays the 3D view over the video with adjustable
+    opacity, with heading, tilt and zoom nudges for lining the camera up.
 - **Undo and redo.** ⌘/Ctrl-Z undoes and ⇧⌘Z (or Ctrl-Y) redoes. Delete
   removes the selected lane or detector.
 
@@ -120,7 +150,10 @@ The stack is React and Vite, written in plain JavaScript.
   | `cameras.js` | Camera pins for the 3D view |
   | `conflictTime.js` | Conflicts in time: phase schedule, travel times, gaps |
   | `hires.js` | High-resolution data: parsing, timeline, state at a moment |
-  | `playbackClock.js` | The playback snapshot store |
+  | `playbackClock.js` | The playback store: snapshot, clock, controls |
+  | `its.js` | ITS equipment data: cabinet, CCTV, detection, preemption |
+  | `itsLayout.js` | Where the equipment stands, for the plan and 3D |
+  | `videoSync.js` | Video start times and keeping a video in step |
   | `zipReader.js`, `zipWriter.js` | Zip handling, from Traffic Signal Kit |
 
 - The 3D view lives in `src/three/`:
@@ -131,6 +164,9 @@ The stack is React and Vite, written in plain JavaScript.
   | `buildScene.js` | The three.js scene |
   | `pins.js` | Camera pin markers and cameras |
   | `spaceTime.js` | Conflicts in time, in 3D |
+  | `equipment.js` | ITS equipment models |
+  | `stage.js` | Shared sky, lights and renderer |
+  | `CctvView.jsx` | The view from a CCTV camera, beside the video |
   | `View3D.jsx` | The viewer and its exports |
 
 - Edits run as model operations on immer drafts (`src/useHistory.js`), which
