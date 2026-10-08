@@ -14,6 +14,7 @@
  */
 
 import { normalizeDesign } from './model.js';
+import { normalizeCorridor } from './corridor.js';
 
 export const DESIGN_KEY = 'intersectionMix:design:v1';
 export const FEED_KEY = 'intersectionMix:feed:v1';
@@ -21,7 +22,8 @@ export const SHARE_PREFIX = '#d=';
 export const SETTINGS_KEY = 'intersectionMix:settings:v1';
 
 /** App settings. Advanced features are off until switched on here. */
-export const DEFAULT_SETTINGS = { playback: false, its: false, video: false };
+export const DEFAULT_SETTINGS = { playback: false, its: false, video: false, corridor: false };
+export const CORRIDOR_KEY = 'intersectionMix:corridor:v1';
 
 export function defaultStorage() {
   try {
@@ -92,6 +94,22 @@ export function loadSettings(storage = defaultStorage()) {
 
 export function saveSettings(settings, storage = defaultStorage()) {
   return safeSet(storage, SETTINGS_KEY, JSON.stringify(settings));
+}
+
+/** The corridor being worked on: its signals and their designs. Its high-resolution data is never kept. */
+export function loadCorridor(storage = defaultStorage()) {
+  const raw = safeGet(storage, CORRIDOR_KEY);
+  if (!raw) return null;
+  try {
+    return normalizeCorridor(JSON.parse(raw), normalizeDesign);
+  } catch {
+    return null;
+  }
+}
+
+/** Saves (or, with null, clears) the corridor. False when it did not fit. */
+export function saveCorridor(corridor, storage = defaultStorage()) {
+  return safeSet(storage, CORRIDOR_KEY, corridor ? JSON.stringify(corridor) : null);
 }
 
 function toBase64Url(bytes) {

@@ -118,6 +118,31 @@ Everything runs in the browser. There is no server and no account.
     3D from that camera beside the video (or instead of it), lamps following
     playback. **Overlay** lays the 3D view over the video with adjustable
     opacity, with heading, tilt and zoom nudges for lining the camera up.
+- **Corridor view (advanced).** Off until switched on under ⚙ Settings; then a
+  **Corridor** button opens it.
+  - Made from an open GTSS feed: pick a road (every signal with an approach on
+    it) or tick signals. They are placed by their latitude and longitude, put
+    in order along the road, and joined by the road between them: from the
+    approach at each signal that faces the next, along a smooth curve, with
+    the lanes carried through. Signals whose approaches don't face each other
+    are shown with a dashed line instead.
+  - Load every signal's high-resolution data at once: a set of files, or a
+    whole folder of logger files (such as `CsvData`), narrowed to the
+    corridor's controllers and the hours you pick before anything is read.
+    Files are matched to signals by controller number.
+  - All the signals replay on one clock, with the scanner bar and transport.
+    - **Map:** the corridor from above, each signal live, and the vehicles the
+      detectors saw driving between them.
+    - **Time-space:** distance along the corridor by time, each signal's
+      through phase each way as green, yellow and red bands, and the
+      vehicles' paths across them, so a green wave (or the lack of one) shows.
+    - **3D:** the whole corridor with signal heads following the data and
+      cars driving signal to signal, queueing at reds.
+  - Vehicles are followed from signal to signal: one leaving toward the next
+    signal is matched to one arriving there, first in first out, if the time
+    between could have been driven. One that could have arrived sooner drove
+    up and waited in the queue. Everything between detectors is an
+    approximation.
 - **Undo and redo.** ⌘/Ctrl-Z undoes and ⇧⌘Z (or Ctrl-Y) redoes. Delete
   removes the selected lane or detector.
 
@@ -166,7 +191,10 @@ The stack is React and Vite, written in plain JavaScript.
   | `its.js` | ITS equipment data: cabinet, CCTV, detection, preemption |
   | `itsLayout.js` | Where the equipment stands, for the plan and 3D |
   | `videoSync.js` | Video start times and keeping a video in step |
-  | `vehicles.js` | Vehicles followed from detector actuations |
+  | `vehicles.js` | Vehicles followed from detector actuations, and queues |
+  | `corridor.js` | Corridors: signals placed by location, the links between them |
+  | `corridorVehicles.js` | Vehicles followed from signal to signal |
+  | `corridorData.js` | Narrowing a folder of logger files, grouping them by controller |
   | `zipReader.js`, `zipWriter.js` | Zip handling, from Traffic Signal Kit |
 
 - The 3D view lives in `src/three/`:
@@ -180,6 +208,7 @@ The stack is React and Vite, written in plain JavaScript.
   | `equipment.js` | ITS equipment models |
   | `stage.js` | Shared sky, lights and renderer |
   | `CctvView.jsx` | The view from a CCTV camera, beside the video |
+  | `corridorScene.js`, `CorridorScene3D.jsx` | The corridor in 3D |
   | `View3D.jsx` | The viewer and its exports |
 
 - Edits run as model operations on immer drafts (`src/useHistory.js`), which

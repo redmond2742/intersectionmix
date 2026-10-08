@@ -19,6 +19,13 @@ const OPTIONS = [
     detail: 'Play a local video in a window beside the plan, synced to signal playback by its start time, with a 3D view '
       + 'from a CCTV camera (needs ITS & equipment).',
   },
+  {
+    key: 'corridor',
+    label: 'Corridor view',
+    detail: 'Several signals from a GTSS feed, placed by location and joined by the road between them. Replay their '
+      + 'high-resolution data together to see the coordination: a map, a time-space diagram, and vehicles driving '
+      + 'signal to signal in 3D.',
+  },
 ];
 
 /** The ⚙ menu. Advanced features live here, off until switched on. */

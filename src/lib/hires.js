@@ -76,6 +76,19 @@ export function parseTime(text) {
   return new Date(y, mo - 1, d, Number(m[4]), Number(m[5]), Number(m[6] || 0), ms).getTime();
 }
 
+/**
+ * The controller and hour a logger file holds, from its name:
+ * TRAF_00001_2026_09_17_0800.csv -> { controller: '1', start: <8:00 that day, ms> }.
+ * Lets a folder of a whole month be narrowed to an hour before any file is read.
+ * Null for any other name.
+ */
+export function hourFromFilename(name) {
+  const m = /(?:^|[/\\])[A-Za-z]*_?0*(\d+)_(\d{4})_(\d{2})_(\d{2})_(\d{2})(\d{2})\.(?:csv|txt|dat)$/i.exec(String(name || ''));
+  if (!m) return null;
+  const [, ctrl, y, mo, d, h, mi] = m;
+  return { controller: String(Number(ctrl)), start: new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi)).getTime() };
+}
+
 /** One file's text -> { meta: { intersection, ip, start }, events: [{ t, code, param }] }. */
 export function parseHiRes(text) {
   const meta = {};

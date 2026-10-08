@@ -21,6 +21,34 @@ const CLEAR = 90; // feet past the stop bar a vehicle is followed before it is d
 export const MAX_WAIT = 180000; // ms: longer between two detectors and it is a different vehicle
 /** A vehicle sitting on a detector for longer than this many times its crossing time is stopped. */
 const STOPPED = 2.5;
+export const QUEUE_GAP = 25; // feet between queued vehicles
+const DISCHARGE_MS = 2000; // how long a queued vehicle takes to move up a place
+
+/** Index of the first value >= x in a sorted array. */
+function firstAtOrAfter(sorted, x) {
+  let lo = 0;
+  let hi = sorted.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sorted[mid] < x) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * How many vehicles are queued ahead of one at time t, in places: those in
+ * its lane that reach the stop bar before it and have not yet at t. One
+ * that has just reached it counts down from 1 to 0 over DISCHARGE_MS, so
+ * the queue rolls forward rather than jumping.
+ */
+export function queueAhead(times, t, own) {
+  let n = 0;
+  for (let i = firstAtOrAfter(times, t - DISCHARGE_MS); i < times.length && times[i] < own; i += 1) {
+    n += times[i] > t ? 1 : (times[i] + DISCHARGE_MS - t) / DISCHARGE_MS;
+  }
+  return n;
+}
 
 /** Where each detector channel sits on its approach. */
 export function detectorPlaces(design, geom) {
@@ -140,6 +168,16 @@ export function buildTracks(timeline, design, geom) {
     }
   }
 
+  // When vehicles reach each lane's stop bar, in order: how its queue discharges.
+  const stopTimes = new Map();
+  for (const track of tracks) {
+    const key = `${track.legId}:${track.laneId}`;
+    if (!stopTimes.has(key)) stopTimes.set(key, []);
+    for (const hit of track.hits) if (hit.near <= 0.5) stopTimes.get(key).push(hit.on);
+  }
+  stopTimes.forEach((list) => list.sort((a, b) => a - b));
+  for (const track of tracks) track.queue = stopTimes.get(`${track.legId}:${track.laneId}`);
+
   for (const track of tracks) {
     const first = track.hits[0];
     const last = track.hits[track.hits.length - 1];
@@ -169,6 +207,16 @@ export function trackAt(track, t) {
     }
     const next = hits[i + 1];
     if (next && t < next.on) {
+      const gap = hit.near - next.far;
+      const freeMs = (gap / speed) * 1000;
+      if (next.near <= 0.5 && track.queue && next.on - hit.off > freeMs + 1000) {
+        // It could have reached the stop bar sooner: it drove up at speed and
+        // waited in the queue, moving up as the vehicles ahead were served.
+        const free = hit.near - ((t - hit.off) / 1000) * speed;
+        const slot = next.far + QUEUE_GAP * queueAhead(track.queue, t, next.on);
+        const dist = Math.min(hit.near, Math.max(free, slot));
+        return { dist, stopped: slot > free + 1 };
+      }
       // Between two detectors: carried along at the speed they imply.
       const part = (t - hit.off) / Math.max(1, next.on - hit.off);
       return { dist: hit.near - (hit.near - next.far) * part, stopped: false };

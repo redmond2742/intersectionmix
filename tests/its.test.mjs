@@ -136,6 +136,6 @@ describe('equipment layout', () => {
 });
 
 test('settings default to everything advanced off', () => {
-  expect(DEFAULT_SETTINGS).toEqual({ playback: false, its: false, video: false });
+  expect(DEFAULT_SETTINGS).toEqual({ playback: false, its: false, video: false, corridor: false });
   expect(loadSettings(null)).toEqual(DEFAULT_SETTINGS);
 });

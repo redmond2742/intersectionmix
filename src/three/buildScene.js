@@ -245,13 +245,15 @@ function buildSignals(design, geom, root, materials) {
 /* Street furniture, cars and trees                                    */
 /* ------------------------------------------------------------------ */
 
-function speedSigns(geom, root, materials) {
+function speedSigns(geom, root, materials, clipRadius = Infinity) {
   for (const g of geom.legs) {
     if (!g.speedLimit) continue;
     const sidewalk = g.cs.sidewalkIn[1] - g.cs.sidewalkIn[0];
     const x = g.cs.curbIn + (sidewalk > 3 ? sidewalk / 2 : 2);
+    const spot = g.world(Math.min(g.S + 70, g.L - 10), x);
+    if (Math.hypot(spot.x, spot.y) > clipRadius) continue;
     const post = new THREE.Group();
-    post.position.copy(at(g.world(Math.min(g.S + 70, g.L - 10), x), CURB));
+    post.position.copy(at(spot, CURB));
     post.rotation.y = facing(g.u);
     const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.1 * FT, 0.1 * FT, 8 * FT, 8), materials.steel);
     pipe.position.y = 4 * FT;
@@ -308,16 +310,23 @@ function traffic(geom, root, materials) {
   }
 }
 
+/** The materials a car needs besides its paint, for pools built outside buildScene. */
+export function carMaterials() {
+  return {
+    glass: new THREE.MeshStandardMaterial({ color: '#2a3642', metalness: 0.2, roughness: 0.15 }),
+    tyre: new THREE.MeshStandardMaterial({ color: '#141414', roughness: 0.9 }),
+  };
+}
+
 /**
- * Vehicles driven by detector data: a pool of cars that are moved and
- * shown as playback asks for them, and hidden when it does not. Vehicles
- * are placed with the same compression the plan draws detectors with, so a
- * car always sits on the loop that is calling.
+ * A pool of cars placed anywhere on the plan: set them with
+ * [{ id, x, y, dir: { x, y } }] in plan feet. Each vehicle keeps its car
+ * (and colour) for as long as it is on the road; cars no longer asked for
+ * are hidden, and reused.
  */
-function vehiclePool(geom, root, materials) {
+export function carPool(root, materials = carMaterials(), max = 400) {
   const pool = [];
-  const used = new Map(); // vehicle id -> car, so each keeps its colour and place
-  const yFor = (g, dist) => (dist >= 0 ? g.mapY(dist) : g.S + dist); // past the stop bar it carries on into the box
+  const used = new Map();
   const take = (id) => {
     const free = pool.find((item) => !item.busy);
     if (free) {
@@ -325,7 +334,7 @@ function vehiclePool(geom, root, materials) {
       free.paint.color.set(CAR_COLORS[hash(id) % CAR_COLORS.length]);
       return free;
     }
-    if (pool.length >= 120) return null;
+    if (pool.length >= max) return null;
     const paint = new THREE.MeshStandardMaterial({ color: CAR_COLORS[hash(id) % CAR_COLORS.length], metalness: 0.3, roughness: 0.45 });
     const item = { group: car('#ffffff', materials, paint), paint, busy: true };
     root.add(item.group);
@@ -336,21 +345,34 @@ function vehiclePool(geom, root, materials) {
     for (const item of pool) item.busy = false;
     const next = new Map();
     for (const v of vehicles) {
-      const g = geom.byId.get(v.legId);
-      const lane = g && g.cs.inbound.find((l) => l.lane.id === v.laneId);
-      if (!lane) continue;
       const item = used.get(v.id) || take(v.id);
       if (!item) continue;
       item.busy = true;
       next.set(v.id, item);
       item.group.visible = true;
-      item.group.position.copy(at(g.world(yFor(g, v.dist), lane.cx)));
-      item.group.rotation.y = facing(g.d);
+      item.group.position.copy(at(v));
+      item.group.rotation.y = facing(v.dir);
     }
     used.clear();
     next.forEach((item, id) => used.set(id, item));
     for (const item of pool) if (!item.busy) item.group.visible = false;
   };
+}
+
+/**
+ * Vehicles driven by detector data at one intersection: by approach, lane
+ * and distance from the stop bar, placed with the same compression the plan
+ * draws detectors with, so a car always sits on the loop that is calling.
+ */
+function vehiclePool(geom, root, materials) {
+  const place = carPool(root, materials, 120);
+  const yFor = (g, dist) => (dist >= 0 ? g.mapY(dist) : g.S + dist); // past the stop bar it carries on into the box
+  return (vehicles) => place(vehicles.map((v) => {
+    const g = geom.byId.get(v.legId);
+    const lane = g && g.cs.inbound.find((l) => l.lane.id === v.laneId);
+    if (!lane) return null;
+    return { id: v.id, ...g.world(yFor(g, v.dist), lane.cx), dir: g.d };
+  }).filter(Boolean));
 }
 
 /**
@@ -389,14 +411,14 @@ function priorityWash(geom, root) {
   };
 }
 
-function trees(geom, root, materials) {
+function trees(geom, root, materials, clipRadius = Infinity) {
   const trunkGeo = new THREE.CylinderGeometry(0.45 * FT, 0.6 * FT, 9 * FT, 8);
   const crownGeo = new THREE.IcosahedronGeometry(6.5 * FT, 1);
   for (const g of geom.legs) {
     for (let y = g.S + 30; y < g.L - 8; y += 45) {
       for (const x of [g.cs.sidewalkIn[1] + 8, g.cs.sidewalkOut[0] - 8]) {
         const p = g.world(y, x);
-        if (onPavement(geom, p)) continue;
+        if (onPavement(geom, p) || Math.hypot(p.x, p.y) > clipRadius) continue;
         const tree = new THREE.Group();
         tree.position.copy(at(p));
         const trunk = new THREE.Mesh(trunkGeo, materials.bark);
@@ -421,17 +443,23 @@ function trees(geom, root, materials) {
  * Builds the intersection as one group. `planCanvas` is the plan drawn at
  * `geom.bounds`. Returns { root, center, size, setPhase }.
  */
-export function buildScene({ design, geom, planCanvas, anisotropy = 8, equipment = false }) {
+export function buildScene({
+  design, geom, planCanvas, anisotropy = 8, equipment = false,
+  ground: withGround = true, traffic: withTraffic = true, clipRadius = Infinity,
+}) {
   const b = geom.bounds;
   const w = b.maxX - b.minX;
   const h = b.maxY - b.minY;
   const root = new THREE.Group();
   root.name = design.name || 'Intersection';
 
-  const plan = new THREE.CanvasTexture(planCanvas);
-  plan.colorSpace = THREE.SRGBColorSpace;
-  plan.anisotropy = anisotropy;
-  const planMaterial = new THREE.MeshStandardMaterial({ map: plan, roughness: 0.95 });
+  let planMaterial = null;
+  if (withGround) {
+    const plan = new THREE.CanvasTexture(planCanvas);
+    plan.colorSpace = THREE.SRGBColorSpace;
+    plan.anisotropy = anisotropy;
+    planMaterial = new THREE.MeshStandardMaterial({ map: plan, roughness: 0.95 });
+  }
   const materials = {
     curb: new THREE.MeshStandardMaterial({ color: '#b9b5ab', roughness: 0.9 }),
     islandSide: new THREE.MeshStandardMaterial({ color: '#a9a498', roughness: 0.9 }),
@@ -444,33 +472,41 @@ export function buildScene({ design, geom, planCanvas, anisotropy = 8, equipment
     leaves: new THREE.MeshStandardMaterial({ color: '#4f8a3c', roughness: 0.9, flatShading: true }),
   };
 
-  // The plan, on the ground, and plain land beyond it.
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(w * FT, h * FT), planMaterial);
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(((b.minX + b.maxX) / 2) * FT, 0, ((b.minY + b.maxY) / 2) * FT);
-  ground.receiveShadow = true;
-  ground.name = 'Plan';
-  // The same colour as the plan's own land, so its edge disappears.
-  const land = new THREE.Mesh(
-    new THREE.PlaneGeometry(Math.max(w, h) * FT * 30, Math.max(w, h) * FT * 30),
-    new THREE.MeshStandardMaterial({ color: LAND, roughness: 1 }),
-  );
-  land.rotation.x = -Math.PI / 2;
-  land.position.set(ground.position.x, -0.02, ground.position.z);
-  land.receiveShadow = true;
-  land.name = 'Land';
-  root.add(land, ground);
+  // The plan, on the ground, and plain land beyond it. A corridor lays its
+  // own ground under every intersection and asks for none here.
+  const surfaces = []; // what a camera pin can stand on: the ground and the raised surfaces, not cars or trees
+  if (withGround) addGround();
+  function addGround() {
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(w * FT, h * FT), planMaterial);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.set(((b.minX + b.maxX) / 2) * FT, 0, ((b.minY + b.maxY) / 2) * FT);
+    ground.receiveShadow = true;
+    ground.name = 'Plan';
+    // The same colour as the plan's own land, so its edge disappears.
+    const land = new THREE.Mesh(
+      new THREE.PlaneGeometry(Math.max(w, h) * FT * 30, Math.max(w, h) * FT * 30),
+      new THREE.MeshStandardMaterial({ color: LAND, roughness: 1 }),
+    );
+    land.rotation.x = -Math.PI / 2;
+    land.position.set(ground.position.x, -0.02, ground.position.z);
+    land.receiveShadow = true;
+    land.name = 'Land';
+    root.add(land, ground);
+    surfaces.push(ground, land);
 
-  const { walks, islands } = surfaceAreas(geom);
-  const sidewalks = raise(walks, CURB, planMaterial, materials.curb, b);
-  if (sidewalks) {
-    sidewalks.name = 'Sidewalks';
-    root.add(sidewalks);
-  }
-  const raised = raise(islands, CURB, planMaterial, materials.islandSide, b);
-  if (raised) {
-    raised.name = 'Islands';
-    root.add(raised);
+    const { walks, islands } = surfaceAreas(geom);
+    const sidewalks = raise(walks, CURB, planMaterial, materials.curb, b);
+    if (sidewalks) {
+      sidewalks.name = 'Sidewalks';
+      root.add(sidewalks);
+      surfaces.push(sidewalks);
+    }
+    const raised = raise(islands, CURB, planMaterial, materials.islandSide, b);
+    if (raised) {
+      raised.name = 'Islands';
+      root.add(raised);
+      surfaces.push(raised);
+    }
   }
 
   // Named layers, so a view can set them aside (conflicts in time hides them).
@@ -489,11 +525,11 @@ export function buildScene({ design, geom, planCanvas, anisotropy = 8, equipment
     buildEquipment(design, geom, layers.equipment);
   }
   const heads = buildSignals(design, geom, layers.signals, materials);
-  speedSigns(geom, layers.signs, materials);
-  traffic(geom, layers.traffic, materials);
+  speedSigns(geom, layers.signs, materials, clipRadius);
+  if (withTraffic) traffic(geom, layers.traffic, materials);
   const setVehicles = vehiclePool(geom, layers.vehicles, materials);
   const setPriority = priorityWash(geom, layers.priority);
-  trees(geom, layers.trees, materials);
+  trees(geom, layers.trees, materials, clipRadius);
 
   const setPhase = (phase) => {
     for (const head of heads) {
@@ -532,8 +568,7 @@ export function buildScene({ design, geom, planCanvas, anisotropy = 8, equipment
 
   return {
     root,
-    // What a camera pin can stand on: the ground and the raised surfaces, not cars or trees.
-    surfaces: [ground, land, sidewalks, raised].filter(Boolean),
+    surfaces,
     layers,
     center: new THREE.Vector3(((b.minX + b.maxX) / 2) * FT, 0, ((b.minY + b.maxY) / 2) * FT),
     size: Math.max(w, h) * FT,

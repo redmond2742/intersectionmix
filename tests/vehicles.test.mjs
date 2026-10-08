@@ -119,3 +119,25 @@ describe('following vehicles', () => {
     expect(trackAt(track, at('08:00:30'))).toBeNull(); // long gone
   });
 });
+
+describe('queues', () => {
+  test('a vehicle that crosses the advance loop long before the stop bar drives up and waits', () => {
+    const design = createTemplate('four');
+    design.legs.forEach((leg) => { leg.detectors.length = 0; });
+    const leg = design.legs[0];
+    leg.speed = 30;
+    const lane = leg.inbound[0];
+    Object.assign(addDetector(design, leg, { laneId: lane.id, purpose: 'stop bar' }), { channel: '1', setback: 0, length: 40 });
+    Object.assign(addDetector(design, leg, { laneId: lane.id, purpose: 'advance' }), { channel: '2', setback: 300, length: 6 });
+    const geom = computeGeometry(design);
+    // Over the advance loop at :00, but not on the stop bar until a minute later (a red light).
+    const lines = [['08:00:00.0', 82, 2], ['08:00:00.3', 81, 2], ['08:01:00.0', 82, 1], ['08:01:02.0', 81, 1]];
+    const tl = buildTimeline(parseHiRes(lines.map(([time, code, ch]) => `9/17/2026 ${time}, ${code}, ${ch}`).join('\n')));
+    const [track] = buildTracks(tl, design, geom).tracks;
+    const t = (s) => new Date(2026, 8, 17, 8, 0, s).getTime();
+    const waiting = trackAt(track, t(30));
+    expect(waiting.stopped).toBe(true);
+    expect(waiting.dist).toBeCloseTo(40, 0); // at the back of the stop bar loop, not crawling half way
+    expect(trackAt(track, t(3)).dist).toBeLessThan(300 - 3 * 30); // early on it moves at speed
+  });
+});

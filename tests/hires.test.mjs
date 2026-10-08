@@ -2,7 +2,7 @@ import { describe, test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   parseTime, parseHiRes, mergeFiles, buildTimeline, stateAt, channelAt, changeIndex, nextChange, previousChange,
-  movementSignal, overlapLetter, describeLog, GAP_MS,
+  movementSignal, overlapLetter, describeLog, GAP_MS, hourFromFilename,
 } from '../src/lib/hires.js';
 import { createTemplate } from '../src/lib/model.js';
 import { loadSettings, saveSettings, DEFAULT_SETTINGS } from '../src/lib/store.js';
@@ -130,5 +130,13 @@ describe('settings', () => {
     const broken = { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('denied'); } };
     expect(loadSettings(broken)).toEqual(DEFAULT_SETTINGS);
     expect(saveSettings({ playback: true }, broken)).toBe(false);
+  });
+});
+
+describe('file names', () => {
+  test('controller and hour, so a folder can be narrowed before reading', () => {
+    expect(hourFromFilename('TRAF_00001_2026_09_17_0800.csv')).toEqual({ controller: '1', start: at('08:00:00.0') });
+    expect(hourFromFilename('CsvData/Ctrl02005/TRAF_02005_2026_09_17_1300.csv').controller).toBe('2005');
+    expect(hourFromFilename('notes.csv')).toBeNull();
   });
 });

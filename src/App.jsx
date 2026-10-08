@@ -34,6 +34,8 @@ const View3D = lazy(() => import('./three/View3D.jsx'));
 // Signal playback is an advanced setting; its player loads only when switched on.
 const Playback = lazy(() => import('./components/Playback.jsx'));
 const VideoWindow = lazy(() => import('./components/VideoWindow.jsx'));
+// The corridor view (an advanced setting) loads only when it is opened.
+const CorridorView = lazy(() => import('./components/CorridorView.jsx'));
 
 function isTyping(target) {
   return target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable);
@@ -48,6 +50,7 @@ export default function App() {
   const [feed, setFeed] = useState(() => loadFeed());
   const [picker, setPicker] = useState(null); // { files, label, signals }
   const [show3d, setShow3d] = useState(false);
+  const [showCorridor, setShowCorridor] = useState(false);
   const [toast, setToast] = useState(null);
   const [canvasKey, setCanvasKey] = useState(0); // remounts the canvas, refitting it, on a new design
   const [playbackLoaded, setPlaybackLoaded] = useState(false);
@@ -106,6 +109,7 @@ export default function App() {
     saveSettings(next);
     if (!next.playback) setPlaybackLoaded(false);
     if (!next.video) setVideoMain(false);
+    if (!next.corridor) setShowCorridor(false);
   };
   const playbackOn = settings.playback && playbackLoaded;
   const planInPip = settings.video && videoMain;
@@ -385,6 +389,10 @@ export default function App() {
           <ExportMenu items={exportItems} />
           <button type="button" className="btn-3d" onClick={() => { setSelection(null); setShow3d(true); }}
             title="Open the intersection in 3D">3D view</button>
+          {settings.corridor && (
+            <button type="button" className="btn-3d" onClick={() => { setSelection(null); setShowCorridor(true); }}
+              title="Several signals along a road, replayed together">Corridor</button>
+          )}
           <SettingsMenu settings={settings} onChange={changeSettings} />
           <span className="sep" />
           <button type="button" onClick={undo} disabled={!history.canUndo} title="Undo (⌘Z)" aria-label="Undo">↶</button>
@@ -570,6 +578,16 @@ export default function App() {
           between detectors it is an approximation, and traffic that never crosses a detector is never shown. While a
           preempt or priority request is running, its approach lights up.
         </p>
+        <h3>Corridor view (advanced)</h3>
+        <p>
+          Switch on ⚙ › Corridor view, open a GTSS feed, and choose a road: every signal on it is placed by its location,
+          in order, and joined by the road between them, from the approaches that face each other. Load their
+          high-resolution data together (a folder of logger files is narrowed to the corridor&apos;s controllers and the
+          hours you pick) and they replay on one clock: a map of the corridor with every signal live, a time-space
+          diagram of each signal&apos;s through phase each way with the vehicles&apos; paths across it, and the corridor in 3D
+          with cars driving from signal to signal. A vehicle leaving one signal is matched to one arriving at the next
+          when the time between could have been driven; between detectors its path is an approximation.
+        </p>
         <h3>ITS &amp; equipment (advanced)</h3>
         <p>
           Switch on ⚙ › ITS &amp; equipment to record the cabinet and its corner, CCTV cameras, the detection system (with
@@ -594,6 +612,19 @@ export default function App() {
           <View3D design={design} geom={geom} planSvg={svgRef.current} initialPhase={phase}
             onClose={() => setShow3d(false)} say={say} updateDesign={update}
             equipment={settings.its} playback={playbackOn ? playbackStore : null} />
+        </Suspense>
+      )}
+      {showCorridor && (
+        <Suspense fallback={<div className="view3d"><div className="view3d-status">Loading the corridor…</div></div>}>
+          <CorridorView feed={feed} editorDesign={design} equipment={settings.its} say={say}
+            onClose={() => setShowCorridor(false)}
+            onOpenSignal={(signalId) => {
+              if (!feed) return;
+              const fromThisFeed = design.source && design.source.feedId === feed.id;
+              if (!fromThisFeed && !window.confirm(`Open signal ${signalId} in the editor? The design open now is not from this feed; Undo brings it back.`)) return;
+              importSignal(feed, signalId);
+              setShowCorridor(false);
+            }} />
         </Suspense>
       )}
       {picker && <SignalPicker feed={picker} onPick={(id) => importSignal(picker, id)} onClose={() => setPicker(null)} />}
