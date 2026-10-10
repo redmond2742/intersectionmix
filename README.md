@@ -14,6 +14,12 @@ Everything runs in the browser. There is no server and no account.
   - Drag an approach's ⟳ handle to rotate it. Skewed, T and five-leg
     intersections all work.
   - Scroll to zoom and drag to pan.
+  - Per approach (Cross-section in the inspector): a **bike box** ahead of the
+    stop bar (green across the approach lanes, 14 ft deep by default; the
+    vehicle stop bar and its detectors move back by its depth), **bicycle and
+    arrow markings** in the bike lanes, and **sidewalk arrows** (with the
+    traffic beside them, toward or away from the intersection, or both ways).
+    None of these are in GTSS; they are kept in the design and share links.
 - **Cross-section strip.** Each approach as Streetmix-style tiles, seen from
   upstream. Drag lanes to reorder them, drag lane types in from the palette, and
   adjust widths with the ± buttons.

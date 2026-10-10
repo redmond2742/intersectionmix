@@ -20,6 +20,97 @@ function Rect({ x0, x1, y0, y1, ...rest }) {
 
 const noop = () => {};
 
+const BOX_GREEN = '#3f9b5b';
+const SIDEWALK_MARK = '#857f72';
+
+/**
+ * The bicycle pavement marking (MUTCD 9C-3), about 6 ft wide, read the
+ * right way up by a rider travelling toward -y.
+ */
+function BikeGlyph({ color = COLORS.marking, width = 0.45 }) {
+  const stroke = { fill: 'none', stroke: color, strokeWidth: width, strokeLinecap: 'round', strokeLinejoin: 'round' };
+  return (
+    <g>
+      <circle cx="-2.1" cy="0.6" r="1.25" {...stroke} />
+      <circle cx="2.1" cy="0.6" r="1.25" {...stroke} />
+      <path d="M-2.1 0.6 L-0.6 -1.2 L1.3 -1.2 L2.1 0.6 M-0.6 -1.2 L0.3 0.6 L1.3 -1.2 M-0.9 -1.8 L-0.2 -1.8 M1.3 -1.2 L1 -2" {...stroke} />
+      <circle cx="0.5" cy="-3.2" r="0.55" fill={color} />
+      <path d="M0.3 -2.6 L-0.2 -1.5" {...stroke} />
+    </g>
+  );
+}
+
+/** Positions every `step` feet from `from` to `to` along a leg. */
+const every = (from, to, step) => {
+  const out = [];
+  for (let y = from; y <= to; y += step) out.push(y);
+  return out;
+};
+
+/** A bicycle and an arrow in each bike lane; the arrow points the way riders go. */
+function BikeLaneArrows({ g }) {
+  const { cs } = g;
+  const marks = [];
+  if (cs.bikeIn) {
+    const x = (cs.bikeIn[0] + cs.bikeIn[1]) / 2;
+    for (const y of every(g.S + 22, g.L - 14, 110)) marks.push({ x, y, toward: true });
+  }
+  if (cs.bikeOut) {
+    const x = (cs.bikeOut[0] + cs.bikeOut[1]) / 2;
+    for (const y of every(g.cwEnd + 30, g.L - 14, 110)) marks.push({ x, y, toward: false });
+  }
+  return marks.map((m) => (
+    // Toward the intersection is -y; a rider leaving reads it turned round.
+    <g key={`${m.x}:${m.y}`} transform={`translate(${m.x} ${m.y}) rotate(${m.toward ? 0 : 180})`} pointerEvents="none">
+      <g transform="translate(0 2.2) scale(0.62)"><BikeGlyph /></g>
+      <g transform="translate(0 -4.6) scale(0.42)"><LaneGlyph turns={['T']} width={1.4} /></g>
+    </g>
+  ));
+}
+
+/** Arrows along the sidewalks: with the traffic beside them, one way, or both. */
+function SidewalkArrows({ g, mode }) {
+  const { cs } = g;
+  const sides = [];
+  const wide = (w) => w[1] - w[0] >= 4;
+  if (wide(cs.sidewalkIn)) sides.push({ x: (cs.sidewalkIn[0] + cs.sidewalkIn[1]) / 2, from: g.S + 18, inbound: true });
+  if (wide(cs.sidewalkOut)) sides.push({ x: (cs.sidewalkOut[0] + cs.sidewalkOut[1]) / 2, from: g.cwEnd + 18, inbound: false });
+  const marks = [];
+  for (const side of sides) {
+    // 'traffic': the sidewalk beside the approach lanes points in, the other out.
+    const dirs = mode === 'both' ? [true, false] : [mode === 'in' || (mode === 'traffic' && side.inbound)];
+    for (const y of every(side.from, g.L - 10, 60)) {
+      dirs.forEach((toward, i) => marks.push({ x: side.x + (dirs.length > 1 ? (i ? 1.3 : -1.3) : 0), y, toward }));
+    }
+  }
+  return marks.map((m) => (
+    <g key={`${m.x}:${m.y}:${m.toward}`} transform={`translate(${m.x} ${m.y}) rotate(${m.toward ? 0 : 180}) scale(0.38)`} pointerEvents="none">
+      <LaneGlyph turns={['T']} color={SIDEWALK_MARK} width={1.6} />
+    </g>
+  ));
+}
+
+/** The bike box: green across the approach lanes (and bike lane) from the stop bar up to the cyclists' stop line. */
+function BikeBox({ g }) {
+  const { cs } = g;
+  if (!g.bikeBox) return null;
+  const x0 = cs.inbound[0].x0;
+  const x1 = cs.bikeIn ? cs.bikeIn[1] : cs.curbIn;
+  const lanes = cs.inbound.length > 2 ? cs.inbound.filter((_, i) => i % 2 === 0) : cs.inbound;
+  return (
+    <g pointerEvents="none">
+      <Rect x0={x0} x1={x1} y0={g.bikeStop} y1={g.S} fill={BOX_GREEN} />
+      {/* The cyclists' stop line, across the front of the box */}
+      <Rect x0={x0} x1={x1} y0={g.bikeStop} y1={g.bikeStop + 1} fill={COLORS.marking} />
+      {lanes.map((item) => (
+        <g key={item.lane.id} transform={`translate(${item.cx} ${(g.bikeStop + g.S) / 2 + 0.6}) scale(${Math.min(1, (g.S - g.bikeStop) / 9)})`}>
+          <BikeGlyph width={0.5} />
+        </g>
+      ))}
+    </g>
+  );
+}
+
 function LegMarkings({ g, selection, onSelect, byTechnology, breaks }) {
   const { cs, leg } = g;
   const selectedLane = selection && selection.laneId;
@@ -35,6 +126,9 @@ function LegMarkings({ g, selection, onSelect, byTechnology, breaks }) {
       {cs.bikeOut && <Rect x0={cs.bikeOut[0]} x1={cs.bikeOut[1]} y0={markStart} y1={g.L} fill={COLORS.bike} opacity="0.6" />}
       {cs.bikeIn && <line x1={cs.bikeIn[0]} x2={cs.bikeIn[0]} y1={g.S} y2={g.L} stroke={COLORS.marking} strokeWidth="0.5" />}
       {cs.bikeOut && <line x1={cs.bikeOut[1]} x2={cs.bikeOut[1]} y1={markStart} y2={g.L} stroke={COLORS.marking} strokeWidth="0.5" />}
+      {leg.bikeArrows && <BikeLaneArrows g={g} />}
+      {leg.sidewalkArrows && leg.sidewalkArrows !== 'none' && <SidewalkArrows g={g} mode={leg.sidewalkArrows} />}
+      <BikeBox g={g} />
 
       {/* Median */}
       {leg.median.type === 'raised' && (

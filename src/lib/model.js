@@ -39,6 +39,16 @@ export const PURPOSES = ['stop bar', 'advanced', 'count'];
 export const MODES = ['presence', 'pulse'];
 export const TECHNOLOGIES = ['inductive_loop', 'radar', 'microwave', 'lidar', 'magnetometer', 'hybrid', 'video'];
 export const VEHICLE_TYPES = ['', 'car', 'truck', 'bus', 'bicycle'];
+/** How deep a bike box is by default, stop bar to bike stop line (NACTO: 10 to 16 ft). */
+export const BIKE_BOX_DEPTH = 14;
+/** Arrows marked on the sidewalks. */
+export const SIDEWALK_ARROWS = {
+  none: 'None',
+  traffic: 'With the traffic beside it',
+  in: 'Toward the intersection',
+  out: 'Away from the intersection',
+  both: 'Both ways',
+};
 export const MEDIAN_TYPES = { none: 'None (double yellow)', paint: 'Painted', raised: 'Raised' };
 export const FREE_RIGHT_PED = { '': 'No crossing', P: 'Ped crossing', PI: 'Ped crossing, improved' };
 /**
@@ -104,6 +114,9 @@ export function makeLeg(opts = {}) {
     bikeIn: 0,
     bikeOut: 0,
     sidewalk: 8,
+    bikeBox: { on: false, depth: BIKE_BOX_DEPTH }, // a bike box ahead of the stop bar, which moves the stop bar back
+    bikeArrows: false, // a bicycle and arrow marked in the bike lanes
+    sidewalkArrows: 'none', // see SIDEWALK_ARROWS
     movements: emptyMovements(),
     crosswalk: { enabled: true, pedPhase: '', length: '', lengthSig: null },
     freeRight: { lanes: 0, ped: '', receiving: 'merge', size: 'standard' },
@@ -775,6 +788,10 @@ export function normalizeDesign(input) {
     leg.bikeIn = num(l.bikeIn, 0);
     leg.bikeOut = num(l.bikeOut, 0);
     leg.sidewalk = num(l.sidewalk, 8);
+    const box = obj(l.bikeBox);
+    leg.bikeBox = { on: !!box.on, depth: Math.max(6, Math.min(30, num(box.depth, BIKE_BOX_DEPTH))) };
+    leg.bikeArrows = !!l.bikeArrows;
+    leg.sidewalkArrows = SIDEWALK_ARROWS[l.sidewalkArrows] ? l.sidewalkArrows : 'none';
     const moves = obj(l.movements);
     for (const t of TURNS) {
       leg.movements[t].phase = str(obj(moves[t]).phase);

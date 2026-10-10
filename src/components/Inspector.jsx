@@ -5,7 +5,7 @@ import {
   moveLane, setBearing, addDetector, addStopBarDetectors, addAdvanceDetectors, autoAssignNema,
   autoNumberChannels, crosswalkLengthFt, crossSectionSig, lanePhase, canonicalTurns, makeOutbound,
   TURNS, TURN_LABELS, LEFT_TREATMENTS, LEFT_TREATMENT_LABELS, PURPOSES, MODES, TECHNOLOGIES, VEHICLE_TYPES,
-  MEDIAN_TYPES, FREE_RIGHT_PED, FREE_RIGHT_RECEIVING, FREE_RIGHT_SIZES, usedPhases, uid,
+  MEDIAN_TYPES, FREE_RIGHT_PED, FREE_RIGHT_RECEIVING, FREE_RIGHT_SIZES, usedPhases, uid, SIDEWALK_ARROWS,
 } from '../lib/model.js';
 import { bearingToTravel, bearingToOrigin } from '../lib/gtss.js';
 
@@ -168,6 +168,16 @@ function LegPanel({ design, leg, update, onSelect }) {
         <Field label="Sidewalk (ft)"><Num value={leg.sidewalk} min={0} max={30} onChange={(v) => edit('sw', (l) => { l.sidewalk = v; })} /></Field>
         <Field label="Bike lane in (ft)"><Num value={leg.bikeIn} min={0} max={12} onChange={(v) => edit('bi', (l) => { l.bikeIn = v; })} /></Field>
         <Field label="Bike lane out (ft)"><Num value={leg.bikeOut} min={0} max={12} onChange={(v) => edit('bo', (l) => { l.bikeOut = v; })} /></Field>
+        <Field label="Bike box" hint={leg.bikeBox.on ? 'The stop bar moves back by its depth' : 'A green box for cyclists ahead of the stop bar'}>
+          <Choice value={leg.bikeBox.on ? 'on' : ''} options={{ '': 'None', on: 'At the stop bar' }}
+            onChange={(v) => edit(null, (l) => { l.bikeBox.on = v === 'on'; })} />
+        </Field>
+        {leg.bikeBox.on && (
+          <Field label="Bike box depth (ft)"><Num value={leg.bikeBox.depth} min={6} max={30} onChange={(v) => edit('bbd', (l) => { l.bikeBox.depth = v; })} /></Field>
+        )}
+        <Field label="Sidewalk arrows">
+          <Choice value={leg.sidewalkArrows} options={SIDEWALK_ARROWS} onChange={(v) => edit(null, (l) => { l.sidewalkArrows = v; })} />
+        </Field>
         <Field label="Free-right lanes"><Num value={leg.freeRight.lanes} min={0} max={2} onChange={(v) => edit('fr', (l) => { l.freeRight.lanes = v; })} /></Field>
         {leg.freeRight.lanes > 0 && (
           <Field label="Free-right crossing"><Choice value={leg.freeRight.ped} options={FREE_RIGHT_PED} onChange={(v) => edit(null, (l) => { l.freeRight.ped = v; })} /></Field>
@@ -183,6 +193,12 @@ function LegPanel({ design, leg, update, onSelect }) {
           </Field>
         )}
       </div>
+      <label className="check">
+        <input type="checkbox" checked={leg.bikeArrows} disabled={!leg.bikeIn && !leg.bikeOut}
+          onChange={(e) => edit(null, (l) => { l.bikeArrows = e.target.checked; })} />
+        Bicycle and arrow markings in the bike lanes{!leg.bikeIn && !leg.bikeOut ? ' (add a bike lane first)' : ''}
+      </label>
+      <p className="muted small">The bike box and arrows aren&apos;t part of GTSS; they&apos;re kept in the design, share links and design files.</p>
 
       <h3>Detectors</h3>
       <DetectorList leg={leg} dets={leg.detectors} onSelect={onSelect} />

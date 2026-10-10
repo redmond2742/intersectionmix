@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { vectors, crossSection, computeGeometry, phaseMovements, phaseCrossings, SLIP_SIZES } from '../src/lib/geometry.js';
-import { createTemplate, crosswalkLengthFt, TEMPLATES } from '../src/lib/model.js';
+import { createTemplate, crosswalkLengthFt, TEMPLATES, addStopBarDetectors, normalizeDesign } from '../src/lib/model.js';
 
 const close = (a, b) => Math.abs(a - b) < 1e-9;
 
@@ -157,5 +157,38 @@ describe('geometry', () => {
       expect(g.speedSign.y).toBeGreaterThanOrEqual(geom.bounds.minY);
     }
     expect(geom.legs[3].speedSign).toBeNull();
+  });
+});
+
+describe('bike boxes and arrows', () => {
+  test('a bike box moves the stop bar back by its depth, and the detectors with it', () => {
+    const design = createTemplate('four');
+    const leg = design.legs[0];
+    addStopBarDetectors(design, leg);
+    const other = design.legs[1].id;
+    const plain = computeGeometry(design);
+    const before = plain.byId.get(leg.id);
+    leg.bikeBox = { on: true, depth: 14 };
+    const boxed = computeGeometry(design);
+    const after = boxed.byId.get(leg.id);
+    expect(after.bikeStop).toBe(before.S); // cyclists stop where vehicles used to
+    expect(after.S).toBe(before.S + 14);
+    expect(after.detectors[0].y0).toBeCloseTo(before.detectors[0].y0 + 14);
+    // Other approaches are untouched.
+    expect(boxed.byId.get(other).S).toBe(plain.byId.get(other).S);
+  });
+
+  test('the options survive a design file, with sensible defaults', () => {
+    const design = createTemplate('four');
+    expect(design.legs[0].bikeBox).toEqual({ on: false, depth: 14 });
+    design.legs[0].bikeBox = { on: true, depth: 99 };
+    design.legs[0].bikeArrows = true;
+    design.legs[0].sidewalkArrows = 'traffic';
+    design.legs[1].sidewalkArrows = 'sideways';
+    const back = normalizeDesign(JSON.parse(JSON.stringify(design)));
+    expect(back.legs[0].bikeBox).toEqual({ on: true, depth: 30 }); // clamped
+    expect(back.legs[0].bikeArrows).toBe(true);
+    expect(back.legs[0].sidewalkArrows).toBe('traffic');
+    expect(back.legs[1].sidewalkArrows).toBe('none');
   });
 });
