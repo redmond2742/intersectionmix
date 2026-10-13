@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import LaneGlyph from './LaneGlyph.jsx';
 import { phaseColor } from '../palette.js';
 import {
-  findLeg, moveLane, addLane, removeLane, makeOutbound, legLabel, addLeg, TURN_LABELS, medianWidth, uid, FREE_RIGHT_SIZES,
+  findLeg, moveLane, addLane, removeLane, makeOutbound, legLabel, addLeg, TURN_LABELS, medianWidth, uid, FREE_RIGHT_SIZES, bikeBoxOf, setBikeBox,
 } from '../lib/model.js';
 import { bearingToTravel } from '../lib/gtss.js';
 
@@ -43,10 +43,25 @@ export default function LegStrip({ design, legId, selection, onSelect, update })
   const leg = findLeg(design, legId);
   const [drop, setDropState] = useState(null); // insertion index while dragging, for the marker
   const dropRef = useRef(null); // the same, for the drop handler, which may run before a re-render
+  const rowRef = useRef(null);
+  const [band, setBand] = useState(null); // where the bike box band sits under the tiles it covers
   const setDrop = (value) => {
     dropRef.current = value;
     setDropState(value);
   };
+
+  // The bike box spans the approach lanes and the bike lane beside them:
+  // measure those tiles, since the side tiles have a minimum width.
+  useLayoutEffect(() => {
+    const boxed = rowRef.current ? [...rowRef.current.querySelectorAll('[data-box]')] : [];
+    if (!boxed.length) {
+      setBand(null);
+      return;
+    }
+    const left = Math.min(...boxed.map((el) => el.offsetLeft));
+    const right = Math.max(...boxed.map((el) => el.offsetLeft + el.offsetWidth));
+    setBand((old) => (old && old.left === left && old.width === right - left ? old : { left, width: right - left }));
+  }, [leg]);
 
   const edit = (recipe, key) => update((d) => {
     const draft = findLeg(d, legId);
@@ -83,6 +98,8 @@ export default function LegStrip({ design, legId, selection, onSelect, update })
   }
 
   const travel = bearingToTravel(leg.bearing);
+  const box = bikeBoxOf(leg);
+  const boxed = box.on && leg.inbound.length > 0;
   const onDragStart = (e, payload) => {
     dropRef.current = null;
     e.dataTransfer.setData('text/plain', payload);
@@ -109,9 +126,9 @@ export default function LegStrip({ design, legId, selection, onSelect, update })
   };
 
   const tiles = [];
-  const side = (key, cls, width, label, body, onRemove, stepper) => {
+  const side = (key, cls, width, label, body, onRemove, stepper, inBox = false) => {
     tiles.push(
-      <div key={key} className={`tile ${cls}`} style={{ width: Math.max(28, width * PX) }}
+      <div key={key} className={`tile ${cls}${inBox ? ' boxed' : ''}`} style={{ width: Math.max(28, width * PX) }} data-box={inBox || undefined}
         onClick={() => onSelect({ type: 'leg', legId })}>
         <span className="tile-label">{label}</span>
         {body}
@@ -144,8 +161,8 @@ export default function LegStrip({ design, legId, selection, onSelect, update })
     const selected = selection && selection.laneId === lane.id;
     tiles.push(
       <div key={lane.id}
-        className={`tile inbound${selected ? ' selected' : ''}${drop === index ? ' drop-before' : ''}${drop === index + 1 && index === leg.inbound.length - 1 ? ' drop-after' : ''}`}
-        style={{ width: lane.width * PX }}
+        className={`tile inbound${boxed ? ' boxed' : ''}${selected ? ' selected' : ''}${drop === index ? ' drop-before' : ''}${drop === index + 1 && index === leg.inbound.length - 1 ? ' drop-after' : ''}`}
+        style={{ width: lane.width * PX }} data-box={boxed || undefined}
         draggable onDragStart={(e) => onDragStart(e, `lane:${index}`)} onDragEnd={() => setDrop(null)}
         onDragOver={(e) => overLane(e, index)} onDrop={(e) => onDrop(e, index)}
         onClick={() => onSelect({ type: 'lane', legId, laneId: lane.id })}>
@@ -174,7 +191,7 @@ export default function LegStrip({ design, legId, selection, onSelect, update })
   }
 
   if (leg.bikeIn > 0) {
-    side('bki', 'bike', leg.bikeIn, 'Bike', <span className="bike-icon">🚲</span>, () => edit((l) => { l.bikeIn = 0; }));
+    side('bki', 'bike', leg.bikeIn, 'Bike', <span className="bike-icon">🚲</span>, () => edit((l) => { l.bikeIn = 0; }), null, boxed);
   }
   if (leg.freeRight.lanes > 0) {
     // The slip leaves before the stop bar, behind a porkchop island; the tile
@@ -218,8 +235,18 @@ export default function LegStrip({ design, legId, selection, onSelect, update })
         </span>
       </div>
       <div className="strip-scroll">
-        <div className="strip-row" onDragOver={(e) => e.preventDefault()} onDrop={(e) => onDrop(e, leg.inbound.length)}>
+        <div className="strip-row" ref={rowRef} onDragOver={(e) => e.preventDefault()} onDrop={(e) => onDrop(e, leg.inbound.length)}>
           {tiles}
+          {boxed && band && (
+            <div className="bikebox-band" style={{ left: band.left, width: band.width }}
+              title="Bike box: a green box for cyclists ahead of the stop bar, which moves the stop bar back by its depth"
+              onClick={() => onSelect({ type: 'leg', legId })}>
+              <span className="bikebox-label">Bike box</span>
+              <Stepper value={box.depth} min={6} max={30} step={1} onChange={(v) => edit((l) => setBikeBox(l, { depth: v }), 'bikebox')} />
+              <button type="button" className="tile-x" aria-label="Remove bike box"
+                onClick={(e) => { e.stopPropagation(); edit((l) => setBikeBox(l, { on: false })); }}>×</button>
+            </div>
+          )}
         </div>
         <div className="strip-ground" />
       </div>
@@ -236,6 +263,10 @@ export default function LegStrip({ design, legId, selection, onSelect, update })
         <button type="button" className="palette-item text" onClick={() => edit((l) => { l.outbound.push(makeOutbound()); })}>+ Receiving lane</button>
         {leg.bikeIn === 0 && <button type="button" className="palette-item text" onClick={() => edit((l) => { l.bikeIn = 5; })}>+ Bike lane (in)</button>}
         {leg.bikeOut === 0 && <button type="button" className="palette-item text" onClick={() => edit((l) => { l.bikeOut = 5; })}>+ Bike lane (out)</button>}
+        {!box.on && leg.inbound.length > 0 && (
+          <button type="button" className="palette-item text" title="A green box for cyclists ahead of the stop bar; the stop bar moves back by its depth"
+            onClick={() => edit((l) => setBikeBox(l, { on: true }))}>+ Bike box</button>
+        )}
         {leg.freeRight.lanes === 0 && <button type="button" className="palette-item text" onClick={() => edit((l) => { l.freeRight.lanes = 1; })}>+ Free right</button>}
       </div>
     </section>

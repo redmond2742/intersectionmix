@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import { vectors, crossSection, computeGeometry, phaseMovements, phaseCrossings, SLIP_SIZES } from '../src/lib/geometry.js';
-import { createTemplate, crosswalkLengthFt, TEMPLATES, addStopBarDetectors, normalizeDesign } from '../src/lib/model.js';
+import { createTemplate, crosswalkLengthFt, TEMPLATES, addStopBarDetectors, normalizeDesign, setBikeBox, bikeBoxOf } from '../src/lib/model.js';
 
 const close = (a, b) => Math.abs(a - b) < 1e-9;
 
@@ -161,6 +161,19 @@ describe('geometry', () => {
 });
 
 describe('bike boxes and arrows', () => {
+  test('a bike box can be added to a leg made before bike boxes existed', () => {
+    const design = createTemplate('four');
+    const leg = design.legs[0];
+    delete leg.bikeBox; // as a design held in memory from an older version has it
+    const before = computeGeometry(design).byId.get(leg.id).S;
+    expect(bikeBoxOf(leg)).toEqual({ on: false, depth: 14 });
+    setBikeBox(leg, { on: true });
+    expect(leg.bikeBox).toEqual({ on: true, depth: 14 });
+    expect(computeGeometry(design).byId.get(leg.id).S).toBe(before + 14);
+    setBikeBox(leg, { depth: 99 });
+    expect(leg.bikeBox).toEqual({ on: true, depth: 30 });
+  });
+
   test('a bike box moves the stop bar back by its depth, and the detectors with it', () => {
     const design = createTemplate('four');
     const leg = design.legs[0];

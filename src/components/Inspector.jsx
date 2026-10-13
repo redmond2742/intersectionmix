@@ -5,7 +5,7 @@ import {
   moveLane, setBearing, addDetector, addStopBarDetectors, addAdvanceDetectors, autoAssignNema,
   autoNumberChannels, crosswalkLengthFt, crossSectionSig, lanePhase, canonicalTurns, makeOutbound,
   TURNS, TURN_LABELS, LEFT_TREATMENTS, LEFT_TREATMENT_LABELS, PURPOSES, MODES, TECHNOLOGIES, VEHICLE_TYPES,
-  MEDIAN_TYPES, FREE_RIGHT_PED, FREE_RIGHT_RECEIVING, FREE_RIGHT_SIZES, usedPhases, uid, SIDEWALK_ARROWS,
+  MEDIAN_TYPES, FREE_RIGHT_PED, FREE_RIGHT_RECEIVING, FREE_RIGHT_SIZES, usedPhases, uid, SIDEWALK_ARROWS, bikeBoxOf, setBikeBox,
 } from '../lib/model.js';
 import { bearingToTravel, bearingToOrigin } from '../lib/gtss.js';
 
@@ -94,6 +94,7 @@ function LegPanel({ design, leg, update, onSelect }) {
   const autoLength = crosswalkLengthFt(leg);
   const cw = leg.crosswalk;
   const lengthStale = cw.length && cw.lengthSig != null && cw.lengthSig !== crossSectionSig(leg);
+  const box = bikeBoxOf(leg);
 
   return (
     <div className="inspector-body">
@@ -168,15 +169,15 @@ function LegPanel({ design, leg, update, onSelect }) {
         <Field label="Sidewalk (ft)"><Num value={leg.sidewalk} min={0} max={30} onChange={(v) => edit('sw', (l) => { l.sidewalk = v; })} /></Field>
         <Field label="Bike lane in (ft)"><Num value={leg.bikeIn} min={0} max={12} onChange={(v) => edit('bi', (l) => { l.bikeIn = v; })} /></Field>
         <Field label="Bike lane out (ft)"><Num value={leg.bikeOut} min={0} max={12} onChange={(v) => edit('bo', (l) => { l.bikeOut = v; })} /></Field>
-        <Field label="Bike box" hint={leg.bikeBox.on ? 'The stop bar moves back by its depth' : 'A green box for cyclists ahead of the stop bar'}>
-          <Choice value={leg.bikeBox.on ? 'on' : ''} options={{ '': 'None', on: 'At the stop bar' }}
-            onChange={(v) => edit(null, (l) => { l.bikeBox.on = v === 'on'; })} />
+        <Field label="Bike box" hint={!leg.inbound.length ? 'Needs an approach lane' : box.on ? 'The stop bar moves back by its depth' : 'A green box for cyclists ahead of the stop bar'}>
+          <Choice value={box.on ? 'on' : ''} options={{ '': 'None', on: 'At the stop bar' }}
+            onChange={(v) => edit(null, (l) => setBikeBox(l, { on: v === 'on' }))} />
         </Field>
-        {leg.bikeBox.on && (
-          <Field label="Bike box depth (ft)"><Num value={leg.bikeBox.depth} min={6} max={30} onChange={(v) => edit('bbd', (l) => { l.bikeBox.depth = v; })} /></Field>
+        {box.on && (
+          <Field label="Bike box depth (ft)"><Num value={box.depth} min={6} max={30} onChange={(v) => edit('bbd', (l) => setBikeBox(l, { depth: v }))} /></Field>
         )}
         <Field label="Sidewalk arrows">
-          <Choice value={leg.sidewalkArrows} options={SIDEWALK_ARROWS} onChange={(v) => edit(null, (l) => { l.sidewalkArrows = v; })} />
+          <Choice value={leg.sidewalkArrows || 'none'} options={SIDEWALK_ARROWS} onChange={(v) => edit(null, (l) => { l.sidewalkArrows = v; })} />
         </Field>
         <Field label="Free-right lanes"><Num value={leg.freeRight.lanes} min={0} max={2} onChange={(v) => edit('fr', (l) => { l.freeRight.lanes = v; })} /></Field>
         {leg.freeRight.lanes > 0 && (
@@ -194,7 +195,7 @@ function LegPanel({ design, leg, update, onSelect }) {
         )}
       </div>
       <label className="check">
-        <input type="checkbox" checked={leg.bikeArrows} disabled={!leg.bikeIn && !leg.bikeOut}
+        <input type="checkbox" checked={!!leg.bikeArrows} disabled={!leg.bikeIn && !leg.bikeOut}
           onChange={(e) => edit(null, (l) => { l.bikeArrows = e.target.checked; })} />
         Bicycle and arrow markings in the bike lanes{!leg.bikeIn && !leg.bikeOut ? ' (add a bike lane first)' : ''}
       </label>

@@ -41,6 +41,19 @@ export const TECHNOLOGIES = ['inductive_loop', 'radar', 'microwave', 'lidar', 'm
 export const VEHICLE_TYPES = ['', 'car', 'truck', 'bus', 'bicycle'];
 /** How deep a bike box is by default, stop bar to bike stop line (NACTO: 10 to 16 ft). */
 export const BIKE_BOX_DEPTH = 14;
+
+/** A leg's bike box, with defaults for a leg made before bike boxes existed. */
+export function bikeBoxOf(leg) {
+  const box = leg && leg.bikeBox;
+  return { on: !!(box && box.on), depth: box && Number(box.depth) > 0 ? Number(box.depth) : BIKE_BOX_DEPTH };
+}
+
+/** Turns a leg's bike box on or off, or changes its depth (6 to 30 ft). */
+export function setBikeBox(leg, patch) {
+  const next = { ...bikeBoxOf(leg), ...patch };
+  next.depth = Math.max(6, Math.min(30, Number(next.depth) || BIKE_BOX_DEPTH));
+  leg.bikeBox = next;
+}
 /** Arrows marked on the sidewalks. */
 export const SIDEWALK_ARROWS = {
   none: 'None',

@@ -287,6 +287,27 @@ table.moves select { width: 100%; }
 .tile.empty { background: transparent; border: 2px dashed #9aa3ad; color: #69707a; }
 .tile.drop-before { box-shadow: inset 4px 0 0 var(--accent); }
 .tile.drop-after { box-shadow: inset -4px 0 0 var(--accent); }
+.strip-row { position: relative; }
+.tile.boxed { padding-bottom: 30px; }
+.bikebox-band {
+  position: absolute;
+  bottom: 0;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #3f9b5b;
+  border-top: 3px solid #fff;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 2;
+}
+.bikebox-label { white-space: nowrap; }
+.bikebox-band .tile-x { top: 1px; }
+.bikebox-band:hover .tile-x, .bikebox-band:hover .stepper button { opacity: 1; }
 .tile .chips { display: flex; flex-wrap: wrap; justify-content: center; }
 .tile .chip { font-size: 10px; padding: 0 5px; margin: 1px; }
 .tile-x {

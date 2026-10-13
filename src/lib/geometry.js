@@ -23,7 +23,7 @@
  * Framework free.
  */
 
-import { medianWidth, turnTargets, findLeg, TURNS } from './model.js';
+import { medianWidth, turnTargets, findLeg, bikeBoxOf, TURNS } from './model.js';
 import { bearingToCompass } from './gtss.js';
 
 export const CROSSWALK_WIDTH = 10;
@@ -172,7 +172,8 @@ export function computeGeometry(design) {
     // A bike box sits between the crosswalk and the stop bar: cyclists stop
     // at its front line, vehicles at the stop bar its depth further back.
     g.bikeStop = g.cwEnd + STOP_BAR_GAP;
-    g.bikeBox = g.leg.bikeBox && g.leg.bikeBox.on && g.cs.inbound.length ? Number(g.leg.bikeBox.depth) || 0 : 0;
+    const box = bikeBoxOf(g.leg);
+    g.bikeBox = box.on && g.cs.inbound.length ? box.depth : 0;
     g.S = g.bikeStop + g.bikeBox;
   }
   const far = Math.max(0, ...legs.map((g) => g.S)) + VIEW_LENGTH;

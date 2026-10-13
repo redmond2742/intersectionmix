@@ -22,7 +22,9 @@ Everything runs in the browser. There is no server and no account.
     None of these are in GTSS; they are kept in the design and share links.
 - **Cross-section strip.** Each approach as Streetmix-style tiles, seen from
   upstream. Drag lanes to reorder them, drag lane types in from the palette, and
-  adjust widths with the ± buttons.
+  adjust widths with the ± buttons. **+ Bike box** adds a bike box to an
+  approach at any time; it shows as a green band across the lanes it covers,
+  with its depth and a × to remove it.
 - **Phases.** Every movement (U, left, through, right) has a phase.
   - Lefts can be protected, permissive, protected-permissive or flashing yellow
     arrow.
