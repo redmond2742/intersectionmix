@@ -133,8 +133,10 @@ export function designFromGtss(files, signalId) {
     });
     if (bearing == null) note(`Approach ${approachId} has no compass bearing; it is drawn pointing north.`);
     leg.crosswalk.enabled = false;
-    const free = /^(\d+)-FR(?:-(PI|P))?$/i.exec(text(pick(row, 'free_right')));
-    if (free) leg.freeRight = { lanes: Number(free[1]), ped: (free[2] || '').toUpperCase(), receiving: 'merge', size: 'standard' };
+    const freeText = text(pick(row, 'free_right'));
+    const free = parseFreeRight(freeText);
+    if (free) leg.freeRight = { ...free, receiving: 'merge', size: 'standard', code: freeText };
+    else if (freeText) note(`Approach ${approachId}: free_right "${freeText}" isn't a free-right code (#-FR, #-FR-P or #-FR-PI), so no slip lane is drawn.`);
     legByApproach.set(approachId, leg);
     design.legs.push(leg);
   }
@@ -423,6 +425,28 @@ export function phaseRows(design) {
   }));
 }
 
+/**
+ * A free_right code: `#-FR` (vehicles only), `#-FR-P` (a pedestrian crossing)
+ * or `#-FR-PI` (a crossing with pedestrian improvements), # being the slip's
+ * lanes. Feeds also write it without the count (`FR-P`, one lane) and as
+ * `FR-P-I`. Returns { lanes, ped } or null.
+ */
+export function parseFreeRight(value) {
+  const m = /^(?:(\d+)\s*-\s*)?FR(?:\s*-\s*(P(?:\s*-?\s*I)?))?$/i.exec(String(value || '').trim());
+  if (!m) return null;
+  const lanes = m[1] == null ? 1 : Number(m[1]);
+  if (!lanes) return null;
+  return { lanes, ped: !m[2] ? '' : /I$/i.test(m[2]) ? 'PI' : 'P' };
+}
+
+/** The free_right code for a slip, in the feed's own spelling while the slip is unchanged. */
+export function freeRightCode(freeRight) {
+  if (!freeRight || !(freeRight.lanes > 0)) return '';
+  const kept = parseFreeRight(freeRight.code);
+  if (kept && kept.lanes === freeRight.lanes && kept.ped === freeRight.ped) return freeRight.code;
+  return `${freeRight.lanes}-FR${freeRight.ped ? `-${freeRight.ped}` : ''}`;
+}
+
 export function approachRows(design) {
   return design.legs.map((leg) => ({
     approach_id: leg.approachId,
@@ -430,7 +454,7 @@ export function approachRows(design) {
     street_name: leg.street,
     compass_bearing: String(Math.round(leg.bearing)),
     posted_speed: String(leg.speed),
-    free_right: leg.freeRight.lanes > 0 ? `${leg.freeRight.lanes}-FR${leg.freeRight.ped ? `-${leg.freeRight.ped}` : ''}` : '',
+    free_right: freeRightCode(leg.freeRight),
     __extra: leg.extra,
   }));
 }

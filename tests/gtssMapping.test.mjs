@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { designFromGtss, gtssFromDesign, listSignals, phaseRows } from '../src/lib/gtssMapping.js';
+import { designFromGtss, gtssFromDesign, listSignals, phaseRows, parseFreeRight } from '../src/lib/gtssMapping.js';
 import { parseTable, readTable, splitCsvLine } from '../src/lib/gtss.js';
 import { legTurns, turnsKey, addLane, findLeg, createTemplate } from '../src/lib/model.js';
 
@@ -65,7 +65,7 @@ describe('import', () => {
     const main = design.legs.find((l) => l.approachId === '1-2');
     expect(main.inbound.map((l) => turnsKey(l.turns))).toEqual(['L', 'T', 'T']);
     expect(main.movements.L.phase).toBe('1');
-    expect(main.freeRight).toEqual({ lanes: 1, ped: 'P', receiving: 'merge', size: 'standard' });
+    expect(main.freeRight).toEqual({ lanes: 1, ped: 'P', receiving: 'merge', size: 'standard', code: '1-FR-P' });
     expect(main.extra).toEqual({ district: 'north' });
   });
 
@@ -93,6 +93,45 @@ describe('import', () => {
     const west = design.legs.find((l) => l.approachId === '1-4');
     expect(west.detectors[0]).toMatchObject({ channel: '2', technology: 'video', laneId: west.inbound[1].id });
     expect(design.unplacedDetectors.map((r) => r.channel)).toEqual(['9']);
+  });
+});
+
+describe('free rights', () => {
+  test('reads every spelling agencies write', () => {
+    expect(parseFreeRight('1-FR')).toEqual({ lanes: 1, ped: '' });
+    expect(parseFreeRight('2-FR-P')).toEqual({ lanes: 2, ped: 'P' });
+    expect(parseFreeRight('1-FR-PI')).toEqual({ lanes: 1, ped: 'PI' });
+    // As real feeds have them: no lane count, and the improvements as P-I.
+    expect(parseFreeRight('FR')).toEqual({ lanes: 1, ped: '' });
+    expect(parseFreeRight('FR-P')).toEqual({ lanes: 1, ped: 'P' });
+    expect(parseFreeRight('FR-P-I')).toEqual({ lanes: 1, ped: 'PI' });
+    expect(parseFreeRight(' fr-p-i ')).toEqual({ lanes: 1, ped: 'PI' });
+    expect(parseFreeRight('')).toBe(null);
+    expect(parseFreeRight('0-FR')).toBe(null);
+    expect(parseFreeRight('yes')).toBe(null);
+  });
+
+  test('a feed\'s FR-P-I approach gets its slip, and exports as it came', () => {
+    const feed = { ...FEED, 'approaches.txt': FEED['approaches.txt'].replace('1-FR-P', 'FR-P-I').replace('1-4,1,Main Street,272,30,', '1-4,1,Main Street,272,30,FR') };
+    const design = designFromGtss(feed, '1');
+    const leg = (id) => design.legs.find((l) => l.approachId === id);
+    expect(leg('1-2').freeRight).toMatchObject({ lanes: 1, ped: 'PI' });
+    expect(leg('1-4').freeRight).toMatchObject({ lanes: 1, ped: '' });
+    expect(leg('1-1').freeRight.lanes).toBe(0);
+    expect(legTurns(leg('1-2'))).toContain('R');
+    const { files } = gtssFromDesign(design, feed);
+    expect(files['approaches.txt']).toContain('1-2,1,Main Street,120,30,FR-P-I,north');
+    expect(files['approaches.txt']).toContain('1-4,1,Main Street,272,30,FR,north');
+    // Once the slip changes, it is written the way the specification spells it.
+    leg('1-2').freeRight.lanes = 2;
+    expect(gtssFromDesign(design, feed).files['approaches.txt']).toContain('1-2,1,Main Street,120,30,2-FR-PI,north');
+  });
+
+  test('says so when free_right is something else', () => {
+    const feed = { ...FEED, 'approaches.txt': FEED['approaches.txt'].replace('1-FR-P', 'maybe') };
+    const design = designFromGtss(feed, '1');
+    expect(design.legs.find((l) => l.approachId === '1-2').freeRight.lanes).toBe(0);
+    expect(design.notes.some((n) => n.includes('"maybe"'))).toBe(true);
   });
 });
 

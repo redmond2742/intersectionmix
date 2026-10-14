@@ -824,6 +824,7 @@ export function normalizeDesign(input) {
       ped: FREE_RIGHT_PED[fr.ped] !== undefined ? fr.ped : '',
       receiving: FREE_RIGHT_RECEIVING[fr.receiving] ? fr.receiving : 'merge',
       size: FREE_RIGHT_SIZES[fr.size] ? fr.size : 'standard',
+      ...(typeof fr.code === 'string' && fr.code ? { code: fr.code } : {}), // the feed's spelling, for export
     };
     leg.extra = obj(l.extra);
     leg.detectors = arr(l.detectors).map((rawDet) => {

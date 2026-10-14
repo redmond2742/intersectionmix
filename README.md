@@ -163,6 +163,7 @@ Everything runs in the browser. There is no server and no account.
 | Phases | Phases belong to movements, not lanes. A protected-permissive or FYA left is protected in its own phase and permissive in its approach's through phase. |
 | Crosswalks | `pedX` 1 means the phase's crosswalk crosses that phase's own approach. 3 is the leg opposite, 2 is both, and 4–7 are diagonal or all-way. |
 | Crosswalk length | A measured or imported length is exported as-is until the lanes change. After that the export uses `LE-<ft>`, computed from the cross-section. |
+| Free right | `free_right` is `#-FR` (vehicles only), `#-FR-P` (a pedestrian crossing) or `#-FR-PI` (pedestrian improvements), # being the slip's lanes. `FR`, `FR-P` and `FR-P-I`, with no count, are read as one lane. Each draws a slip lane behind a porkchop island. An unchanged slip is exported as the feed spelled it. |
 
 GTSS does not record lane order, lane widths or receiving lanes. An import
 lays lanes out in their usual order (U, L, LT, T, TR, R, inside to outside), at
